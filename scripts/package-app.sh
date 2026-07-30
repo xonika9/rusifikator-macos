@@ -1,0 +1,40 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+repo_root=${0:A:h:h}
+cd "$repo_root"
+
+swift build -c release
+bin_path=$(swift build -c release --show-bin-path)
+executable_path="$bin_path/Rusifikator"
+info_plist_path="$repo_root/Sources/Rusifikator/Resources/Rusifikator-Info.plist"
+app_path="$repo_root/dist/Rusifikator.app"
+staging_root=$(mktemp -d "${TMPDIR:-/tmp}/rusifikator-package.XXXXXX")
+staging_app="$staging_root/Rusifikator.app"
+
+cleanup() {
+  rm -rf "$staging_root"
+}
+trap cleanup EXIT
+
+[[ -x "$executable_path" ]] || {
+  print -u2 "Release executable is missing: $executable_path"
+  exit 1
+}
+install -d "$staging_app/Contents/MacOS" "$staging_app/Contents/Resources"
+install -m 755 "$executable_path" "$staging_app/Contents/MacOS/Rusifikator"
+install -m 644 "$info_plist_path" "$staging_app/Contents/Info.plist"
+install -m 644 \
+  "$repo_root/Sources/Rusifikator/Resources/SystemPrompt.txt" \
+  "$staging_app/Contents/Resources/SystemPrompt.txt"
+
+plutil -lint "$staging_app/Contents/Info.plist"
+codesign --force --deep --sign - --timestamp=none "$staging_app"
+codesign --verify --deep --strict --verbose=2 "$staging_app"
+
+install -d "$repo_root/dist"
+rm -rf "$app_path"
+mv "$staging_app" "$app_path"
+
+print "Packaged $app_path"
