@@ -63,4 +63,65 @@ final class CredentialStoreTests: XCTestCase {
             XCTAssertFalse(error.localizedDescription.contains("private-value"))
         }
     }
+
+    func testPartialSaveFailureRestoresPreviousKeyAndOrigin() throws {
+        let backend = FailingKeychainBackend()
+        let store = KeychainCredentialStore(
+            service: "test-service",
+            apiKeyAccount: "test-key",
+            originAccount: "test-origin",
+            backend: backend
+        )
+        let previousURL = try XCTUnwrap(URL(string: "https://trusted.example/v1"))
+        let replacementURL = try XCTUnwrap(URL(string: "https://replacement.example/v1"))
+        try store.saveAPIKey("previous-secret", for: previousURL)
+
+        backend.failNextUpsert(for: "test-origin")
+
+        XCTAssertThrowsError(
+            try store.saveAPIKey("replacement-secret", for: replacementURL)
+        ) { error in
+            XCTAssertEqual(
+                error as? FailingKeychainBackend.Failure,
+                .injected
+            )
+        }
+        XCTAssertEqual(try store.apiKey(for: previousURL), "previous-secret")
+        XCTAssertThrowsError(try store.apiKey(for: replacementURL)) { error in
+            XCTAssertEqual(error as? CredentialStoreError, .providerOriginMismatch)
+        }
+    }
+}
+
+private final class FailingKeychainBackend: KeychainBackend {
+    enum Failure: Error, Equatable {
+        case injected
+    }
+
+    private var values: [String: Data] = [:]
+    private var failingAccount: String?
+
+    func failNextUpsert(for account: String) {
+        failingAccount = account
+    }
+
+    func readValue(service: String, account: String) throws -> Data? {
+        values[key(service: service, account: account)]
+    }
+
+    func upsert(_ data: Data, service: String, account: String) throws {
+        if failingAccount == account {
+            failingAccount = nil
+            throw Failure.injected
+        }
+        values[key(service: service, account: account)] = data
+    }
+
+    func deleteValue(service: String, account: String) throws {
+        values.removeValue(forKey: key(service: service, account: account))
+    }
+
+    private func key(service: String, account: String) -> String {
+        "\(service)\u{0}\(account)"
+    }
 }

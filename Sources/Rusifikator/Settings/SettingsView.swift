@@ -28,6 +28,12 @@ extension OpenAICompatibleClient: ConnectionChecking {
 @Observable
 @MainActor
 final class SettingsViewModel {
+    private struct ConnectionDraft: Equatable, Sendable {
+        let providerURL: String
+        let model: String
+        let apiKey: String
+    }
+
     enum ConnectionState: Equatable {
         case idle
         case checking
@@ -44,12 +50,19 @@ final class SettingsViewModel {
     var draftProviderURL: String {
         didSet {
             clearCarriedKeyForChangedOrigin()
-            connectionState = .idle
-            saveState = .idle
+            draftDidChange()
         }
     }
-    var draftModel: String
-    var draftAPIKey: String
+    var draftModel: String {
+        didSet {
+            draftDidChange()
+        }
+    }
+    var draftAPIKey: String {
+        didSet {
+            draftDidChange()
+        }
+    }
     var showsAPIKey = false
 
     private(set) var connectionState: ConnectionState = .idle
@@ -74,6 +87,9 @@ final class SettingsViewModel {
 
     @ObservationIgnored
     private var connectionTask: Task<Void, Never>?
+
+    @ObservationIgnored
+    private var activeConnectionCheckID: UUID?
 
     init(
         store: SettingsStore = SettingsStore(),
@@ -110,11 +126,11 @@ final class SettingsViewModel {
     }
 
     var canCheckConnection: Bool {
-        connectionState != .checking
+        connectionTask == nil
     }
 
     var loginItemIsEnabled: Bool {
-        loginItemStatus == .enabled
+        loginItemStatus == .enabled || loginItemStatus == .requiresApproval
     }
 
     var loginItemRequiresApproval: Bool {
@@ -125,10 +141,20 @@ final class SettingsViewModel {
         guard let baseURL = URL(string: store.providerURLString) else {
             return
         }
+
+        let apiKey: String
+        do {
+            apiKey = try credentials.apiKey(for: baseURL) ?? ""
+            loadMessage = nil
+        } catch {
+            apiKey = ""
+            loadMessage = Self.userMessage(for: error)
+        }
+
         editor.submit(
             baseURL: baseURL,
             model: store.model,
-            apiKey: currentAPIKey
+            apiKey: apiKey
         )
     }
 
@@ -136,18 +162,24 @@ final class SettingsViewModel {
         do {
             let values = try validatedDraft()
             let key = draftAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
-            if key.isEmpty {
-                try credentials.deleteAPIKey()
-            } else {
+            let effectiveKey: String
+            if !key.isEmpty {
                 try credentials.saveAPIKey(key, for: values.url)
+                effectiveKey = key
+            } else {
+                do {
+                    effectiveKey = try credentials.apiKey(for: values.url) ?? ""
+                } catch CredentialStoreError.providerOriginMismatch {
+                    effectiveKey = ""
+                }
             }
 
             store.providerURLString = values.urlString
             store.model = values.model
-            currentAPIKey = key
+            currentAPIKey = effectiveKey
             draftProviderURL = values.urlString
             draftModel = values.model
-            draftAPIKey = key
+            draftAPIKey = effectiveKey
             loadMessage = nil
             saveState = .success
         } catch {
@@ -169,6 +201,9 @@ final class SettingsViewModel {
         }
 
         let key = draftAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let connectionDraft = currentConnectionDraft
+        let checkID = UUID()
+        activeConnectionCheckID = checkID
         connectionState = .checking
         connectionTask = Task { [weak self, connectionChecker] in
             do {
@@ -178,10 +213,16 @@ final class SettingsViewModel {
                     apiKey: key
                 )
                 guard !Task.isCancelled else { return }
-                self?.finishConnectionCheck(with: .success)
+                self?.finishConnectionCheck(
+                    id: checkID,
+                    draft: connectionDraft,
+                    with: .success
+                )
             } catch {
                 guard !Task.isCancelled else { return }
                 self?.finishConnectionCheck(
+                    id: checkID,
+                    draft: connectionDraft,
                     with: .failure(Self.userMessage(for: error))
                 )
             }
@@ -189,8 +230,7 @@ final class SettingsViewModel {
     }
 
     func reset() {
-        connectionTask?.cancel()
-        connectionTask = nil
+        invalidateConnectionCheck()
         connectionState = .idle
 
         do {
@@ -256,7 +296,36 @@ final class SettingsViewModel {
         draftAPIKey = ""
     }
 
-    private func finishConnectionCheck(with state: ConnectionState) {
+    private var currentConnectionDraft: ConnectionDraft {
+        ConnectionDraft(
+            providerURL: draftProviderURL.trimmingCharacters(in: .whitespacesAndNewlines),
+            model: draftModel.trimmingCharacters(in: .whitespacesAndNewlines),
+            apiKey: draftAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+    }
+
+    private func draftDidChange() {
+        invalidateConnectionCheck()
+        connectionState = .idle
+        saveState = .idle
+    }
+
+    private func invalidateConnectionCheck() {
+        activeConnectionCheckID = nil
+        connectionTask?.cancel()
+        connectionTask = nil
+    }
+
+    private func finishConnectionCheck(
+        id: UUID,
+        draft: ConnectionDraft,
+        with state: ConnectionState
+    ) {
+        guard activeConnectionCheckID == id, currentConnectionDraft == draft else {
+            return
+        }
+
+        activeConnectionCheckID = nil
         connectionTask = nil
         connectionState = state
     }
