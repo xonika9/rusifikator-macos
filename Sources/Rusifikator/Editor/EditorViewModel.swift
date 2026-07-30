@@ -61,6 +61,9 @@ final class EditorViewModel {
     @ObservationIgnored
     private var copyConfirmationID: UUID?
 
+    @ObservationIgnored
+    private var copyConfirmationTask: Task<Void, Never>?
+
     init(
         apiClient: any EditorAPIClient = OpenAIEditorAPIClient(),
         clipboard: any ClipboardService = SystemClipboardService()
@@ -157,17 +160,22 @@ final class EditorViewModel {
         }
 
         clipboard.copy(result)
+        copyConfirmationTask?.cancel()
         let confirmationID = UUID()
         copyConfirmationID = confirmationID
         copiedConfirmationVisible = true
 
-        Task { [weak self] in
+        copyConfirmationTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else {
+                return
+            }
             guard self?.copyConfirmationID == confirmationID else {
                 return
             }
             self?.copyConfirmationID = nil
             self?.copiedConfirmationVisible = false
+            self?.copyConfirmationTask = nil
         }
     }
 
@@ -222,6 +230,8 @@ final class EditorViewModel {
     }
 
     private func hideCopyConfirmation() {
+        copyConfirmationTask?.cancel()
+        copyConfirmationTask = nil
         copyConfirmationID = nil
         copiedConfirmationVisible = false
     }

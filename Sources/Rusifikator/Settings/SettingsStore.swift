@@ -41,14 +41,17 @@ final class SettingsStore {
     }
 }
 
-enum ProviderOrigin {
+struct ProviderOrigin: Equatable, Sendable {
     enum Error: Swift.Error, Equatable {
         case requiresHTTPS
         case missingHost
         case credentialsNotAllowed
     }
 
-    static func canonicalString(for url: URL) throws -> String {
+    let host: String
+    let port: Int
+
+    init(url: URL) throws {
         guard let components = URLComponents(
             url: url,
             resolvingAgainstBaseURL: false
@@ -65,10 +68,23 @@ enum ProviderOrigin {
             throw Error.missingHost
         }
 
+        self.host = host
+        port = components.port ?? 443
+    }
+
+    var canonicalString: String {
         let renderedHost = host.contains(":") ? "[\(host)]" : host
-        if let port = components.port, port != 443 {
+        if port != 443 {
             return "https://\(renderedHost):\(port)"
         }
         return "https://\(renderedHost)"
+    }
+
+    func permits(_ url: URL) -> Bool {
+        (try? ProviderOrigin(url: url)) == self
+    }
+
+    static func canonicalString(for url: URL) throws -> String {
+        try ProviderOrigin(url: url).canonicalString
     }
 }

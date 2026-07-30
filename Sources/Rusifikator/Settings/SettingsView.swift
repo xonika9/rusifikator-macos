@@ -28,9 +28,15 @@ extension OpenAICompatibleClient: ConnectionChecking {
 @Observable
 @MainActor
 final class SettingsViewModel {
-    enum FeedbackState: Equatable {
+    enum ConnectionState: Equatable {
         case idle
         case checking
+        case success
+        case failure(String)
+    }
+
+    enum SaveState: Equatable {
+        case idle
         case success
         case failure(String)
     }
@@ -46,14 +52,12 @@ final class SettingsViewModel {
     var draftAPIKey: String
     var showsAPIKey = false
 
-    private(set) var connectionState: FeedbackState = .idle
-    private(set) var saveState: FeedbackState = .idle
+    private(set) var connectionState: ConnectionState = .idle
+    private(set) var saveState: SaveState = .idle
     private(set) var loadMessage: String?
     private(set) var loginItemStatus: LoginItemController.Status
     private(set) var loginItemMessage: String?
 
-    private(set) var currentProviderURLString: String
-    private(set) var currentModel: String
     private(set) var currentAPIKey: String
 
     @ObservationIgnored
@@ -84,8 +88,6 @@ final class SettingsViewModel {
 
         let providerURL = store.providerURLString
         let model = store.model
-        currentProviderURLString = providerURL
-        currentModel = model
         draftProviderURL = providerURL
         draftModel = model
         loginItemStatus = loginItem.status
@@ -120,12 +122,12 @@ final class SettingsViewModel {
     }
 
     func submit(_ editor: EditorViewModel) {
-        guard let baseURL = URL(string: currentProviderURLString) else {
+        guard let baseURL = URL(string: store.providerURLString) else {
             return
         }
         editor.submit(
             baseURL: baseURL,
-            model: currentModel,
+            model: store.model,
             apiKey: currentAPIKey
         )
     }
@@ -142,8 +144,6 @@ final class SettingsViewModel {
 
             store.providerURLString = values.urlString
             store.model = values.model
-            currentProviderURLString = values.urlString
-            currentModel = values.model
             currentAPIKey = key
             draftProviderURL = values.urlString
             draftModel = values.model
@@ -196,11 +196,9 @@ final class SettingsViewModel {
         do {
             try credentials.deleteAPIKey()
             store.reset()
-            currentProviderURLString = SettingsStore.defaultProviderURLString
-            currentModel = SettingsStore.defaultModel
             currentAPIKey = ""
-            draftProviderURL = currentProviderURLString
-            draftModel = currentModel
+            draftProviderURL = store.providerURLString
+            draftModel = store.model
             draftAPIKey = ""
             showsAPIKey = false
             loadMessage = nil
@@ -246,7 +244,7 @@ final class SettingsViewModel {
 
     private func clearCarriedKeyForChangedOrigin() {
         guard !currentAPIKey.isEmpty, draftAPIKey == currentAPIKey,
-              let currentURL = URL(string: currentProviderURLString),
+              let currentURL = URL(string: store.providerURLString),
               let draftURL = URL(string: draftProviderURL),
               let currentOrigin = try? ProviderOrigin.canonicalString(for: currentURL),
               let draftOrigin = try? ProviderOrigin.canonicalString(for: draftURL),
@@ -258,7 +256,7 @@ final class SettingsViewModel {
         draftAPIKey = ""
     }
 
-    private func finishConnectionCheck(with state: FeedbackState) {
+    private func finishConnectionCheck(with state: ConnectionState) {
         connectionTask = nil
         connectionState = state
     }

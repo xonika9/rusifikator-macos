@@ -38,9 +38,15 @@ struct OpenAICompatibleClient: Sendable {
         request.httpBody = try JSONEncoder().encode(payload)
         request.cachePolicy = .reloadIgnoringLocalCacheData
 
+        let allowedOrigin: ProviderOrigin
+        do {
+            allowedOrigin = try ProviderOrigin(url: endpoint)
+        } catch {
+            throw APIError.invalidURL
+        }
         let transfer = StreamingRequest(
             maximumBytes: Self.maximumResponseBytes,
-            allowedOrigin: Origin(url: endpoint)
+            allowedOrigin: allowedOrigin
         )
 
         let data: Data
@@ -104,15 +110,16 @@ struct OpenAICompatibleClient: Sendable {
     }
 
     static func endpoint(for baseURL: URL) throws -> URL {
+        do {
+            _ = try ProviderOrigin(url: baseURL)
+        } catch {
+            throw APIError.invalidURL
+        }
+
         guard var components = URLComponents(
             url: baseURL,
             resolvingAgainstBaseURL: false
         ),
-        components.scheme?.lowercased() == "https",
-        components.user == nil,
-        components.password == nil,
-        let host = components.host,
-        !host.isEmpty,
         components.query == nil,
         components.fragment == nil
         else {
@@ -157,7 +164,9 @@ struct OpenAICompatibleClient: Sendable {
 
     private static func normalizeContent(_ content: String) -> String {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.count >= 2 else {
+        guard let firstIndex = trimmed.indices.first,
+              trimmed.index(after: firstIndex) < trimmed.endIndex
+        else {
             return trimmed
         }
 
@@ -176,24 +185,9 @@ struct OpenAICompatibleClient: Sendable {
     }
 }
 
-private struct Origin: Sendable, Equatable {
-    let host: String
-    let port: Int
-
-    init(url: URL) {
-        host = url.host?.lowercased() ?? ""
-        port = url.port ?? 443
-    }
-
-    func permits(_ url: URL) -> Bool {
-        url.scheme?.lowercased() == "https"
-            && Origin(url: url) == self
-    }
-}
-
 private final class StreamingRequest: NSObject, @unchecked Sendable {
     private let maximumBytes: Int
-    private let allowedOrigin: Origin
+    private let allowedOrigin: ProviderOrigin
     private let lock = NSLock()
 
     private var continuation: CheckedContinuation<Data, Error>?
@@ -203,7 +197,7 @@ private final class StreamingRequest: NSObject, @unchecked Sendable {
     private var isFinished = false
     private var cancellationRequested = false
 
-    init(maximumBytes: Int, allowedOrigin: Origin) {
+    init(maximumBytes: Int, allowedOrigin: ProviderOrigin) {
         self.maximumBytes = maximumBytes
         self.allowedOrigin = allowedOrigin
     }
@@ -214,24 +208,26 @@ private final class StreamingRequest: NSObject, @unchecked Sendable {
     ) async throws -> Data {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
-                lock.lock()
-                if cancellationRequested {
-                    lock.unlock()
+                let task = lock.withLock { () -> URLSessionDataTask? in
+                    guard !cancellationRequested else {
+                        return nil
+                    }
+
+                    self.continuation = continuation
+                    let session = URLSession(
+                        configuration: configuration,
+                        delegate: self,
+                        delegateQueue: nil
+                    )
+                    let task = session.dataTask(with: request)
+                    self.session = session
+                    self.task = task
+                    return task
+                }
+                guard let task else {
                     continuation.resume(throwing: APIError.cancelled)
                     return
                 }
-
-                self.continuation = continuation
-                let session = URLSession(
-                    configuration: configuration,
-                    delegate: self,
-                    delegateQueue: nil
-                )
-                let task = session.dataTask(with: request)
-                self.session = session
-                self.task = task
-                lock.unlock()
-
                 task.resume()
             }
         } onCancel: {
@@ -240,9 +236,9 @@ private final class StreamingRequest: NSObject, @unchecked Sendable {
     }
 
     private func cancel() {
-        lock.lock()
-        cancellationRequested = true
-        lock.unlock()
+        lock.withLock {
+            cancellationRequested = true
+        }
         finish(.failure(APIError.cancelled), cancelTask: true)
     }
 
@@ -250,19 +246,24 @@ private final class StreamingRequest: NSObject, @unchecked Sendable {
         _ result: Result<Data, Error>,
         cancelTask: Bool = false
     ) {
-        lock.lock()
-        guard !isFinished else {
-            lock.unlock()
+        let resources = lock.withLock {
+            guard !isFinished else {
+                return nil as (
+                    CheckedContinuation<Data, Error>?,
+                    URLSessionDataTask?,
+                    URLSession?
+                )?
+            }
+            isFinished = true
+            let resources = (continuation, task, session)
+            continuation = nil
+            task = nil
+            session = nil
+            return resources
+        }
+        guard let (continuation, task, session) = resources else {
             return
         }
-        isFinished = true
-        let continuation = self.continuation
-        self.continuation = nil
-        let task = self.task
-        let session = self.session
-        self.task = nil
-        self.session = nil
-        lock.unlock()
 
         if cancelTask {
             task?.cancel()
@@ -336,16 +337,16 @@ extension StreamingRequest: URLSessionDataDelegate {
         dataTask: URLSessionDataTask,
         didReceive data: Data
     ) {
-        lock.lock()
-        guard !isFinished else {
-            lock.unlock()
-            return
+        let exceedsLimit = lock.withLock {
+            guard !isFinished else {
+                return false
+            }
+            let exceedsLimit = data.count > maximumBytes - buffer.count
+            if !exceedsLimit {
+                buffer.append(data)
+            }
+            return exceedsLimit
         }
-        let exceedsLimit = data.count > maximumBytes - buffer.count
-        if !exceedsLimit {
-            buffer.append(data)
-        }
-        lock.unlock()
 
         if exceedsLimit {
             finish(
@@ -392,9 +393,7 @@ extension StreamingRequest: URLSessionTaskDelegate {
             return
         }
 
-        lock.lock()
-        let data = buffer
-        lock.unlock()
+        let data = lock.withLock { buffer }
         finish(.success(data))
     }
 }
