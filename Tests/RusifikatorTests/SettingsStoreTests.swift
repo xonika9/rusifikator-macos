@@ -80,6 +80,43 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(service.unregisterCallCount, 1)
     }
 
+    @MainActor
+    func testLaunchAgentFallbackRegistersCurrentApplicationPath() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let plistURL = directory.appendingPathComponent("login-item.plist")
+        let executableURL = URL(fileURLWithPath: "/Applications/Rusifikator.app/Contents/MacOS/Rusifikator")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let service = LaunchAgentLoginItemService(
+            plistURL: plistURL,
+            executableURL: executableURL,
+            bundleIdentifier: "dev.gotacat.Rusifikator"
+        )
+
+        XCTAssertEqual(service.status, .disabled)
+
+        try service.register()
+
+        XCTAssertEqual(service.status, .enabled)
+        let data = try Data(contentsOf: plistURL)
+        let plist = try XCTUnwrap(
+            PropertyListSerialization.propertyList(from: data, format: nil)
+                as? [String: Any]
+        )
+        XCTAssertEqual(plist["Label"] as? String, "dev.gotacat.Rusifikator")
+        XCTAssertEqual(
+            plist["ProgramArguments"] as? [String],
+            [executableURL.path]
+        )
+        XCTAssertEqual(plist["RunAtLoad"] as? Bool, true)
+        XCTAssertEqual(plist["LimitLoadToSessionType"] as? String, "Aqua")
+
+        try service.unregister()
+
+        XCTAssertEqual(service.status, .disabled)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: plistURL.path))
+    }
+
     private func makeDefaults() -> (UserDefaults, String) {
         let suiteName = "dev.gotacat.Rusifikator.tests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
