@@ -4,8 +4,10 @@ import SwiftUI
 @Observable
 @MainActor
 final class PopoverCoordinator {
-    enum Page: Equatable {
+    enum Page {
         case editor
+        case history
+        case historyDetail(HistoryEntry.ID)
         case settings
     }
 
@@ -13,8 +15,9 @@ final class PopoverCoordinator {
 }
 
 struct PopoverRootView: View {
-    @Bindable var coordinator: PopoverCoordinator
+    let coordinator: PopoverCoordinator
     @Bindable var editor: EditorViewModel
+    let history: HistoryStore
     let settings: SettingsViewModel
 
     var body: some View {
@@ -24,10 +27,28 @@ struct PopoverRootView: View {
                 EditorView(
                     editor: editor,
                     settings: settings,
+                    openHistory: {
+                        coordinator.page = .history
+                    },
                     openSettings: {
                         coordinator.page = .settings
                     }
                 )
+
+            case .history:
+                historyView
+
+            case let .historyDetail(id):
+                if let entry = history.entries.first(where: { $0.id == id }) {
+                    HistoryDetailView(
+                        entry: entry,
+                        close: {
+                            coordinator.page = .history
+                        }
+                    )
+                } else {
+                    historyView
+                }
 
             case .settings:
                 SettingsView(
@@ -38,7 +59,19 @@ struct PopoverRootView: View {
                 )
             }
         }
-        .frame(width: 420, height: 560)
+        .frame(width: PopoverLayout.width, height: PopoverLayout.height)
         .background(AppTheme.window)
+    }
+
+    private var historyView: some View {
+        HistoryView(
+            history: history,
+            close: {
+                coordinator.page = .editor
+            },
+            openEntry: { id in
+                coordinator.page = .historyDetail(id)
+            }
+        )
     }
 }

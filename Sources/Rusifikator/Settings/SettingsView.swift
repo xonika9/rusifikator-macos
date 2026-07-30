@@ -359,8 +359,16 @@ final class SettingsViewModel {
     }
 
     private static func userMessage(for error: any Error) -> String {
-        if let localized = error as? any LocalizedError,
-           let description = localized.errorDescription {
+        if let apiError = error as? APIError,
+           let description = apiError.errorDescription {
+            return description
+        }
+        if let credentialError = error as? CredentialStoreError,
+           let description = credentialError.errorDescription {
+            return description
+        }
+        if let validationError = error as? SettingsValidationError,
+           let description = validationError.errorDescription {
             return description
         }
         return "Не удалось выполнить действие. Попробуй ещё раз."
@@ -457,30 +465,15 @@ struct SettingsView: View {
                     loginItemRow
                     connectionPanel
 
-                    if let feedback = settingsFeedback {
-                        Text(feedback.text)
-                            .font(.system(size: 10))
-                            .foregroundStyle(feedback.color)
-                            .padding(.top, 8)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    Button("Сбросить настройки…", role: .destructive) {
-                        resetConfirmationVisible = true
-                    }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(AppTheme.danger)
-                    .padding(.top, 12)
                 }
                 .padding(.top, 14)
                 .padding(.horizontal, 16)
                 .padding(.bottom, 12)
             }
 
+            settingsFeedbackBar
             footer
         }
-        .frame(width: 420, height: 560)
         .background(AppTheme.window)
         .onAppear {
             model.refreshLoginItemStatus()
@@ -651,6 +644,13 @@ struct SettingsView: View {
 
     private var footer: some View {
         HStack(spacing: 8) {
+            Button("Сбросить…", role: .destructive) {
+                resetConfirmationVisible = true
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 10, weight: .medium))
+            .foregroundStyle(AppTheme.danger)
+
             Spacer()
 
             Button("Отмена") {
@@ -674,6 +674,26 @@ struct SettingsView: View {
             Rectangle()
                 .fill(AppTheme.text.opacity(0.08))
                 .frame(height: 1)
+        }
+    }
+
+    @ViewBuilder
+    private var settingsFeedbackBar: some View {
+        if let feedback = settingsFeedback {
+            Text(feedback.text)
+                .font(.system(size: 10))
+                .foregroundStyle(feedback.color)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 7)
+                .background(AppTheme.window)
+                .overlay(alignment: .top) {
+                    Rectangle()
+                        .fill(AppTheme.text.opacity(0.08))
+                        .frame(height: 1)
+                }
+                .accessibilityElement(children: .combine)
         }
     }
 

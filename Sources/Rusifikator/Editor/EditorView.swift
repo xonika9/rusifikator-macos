@@ -3,9 +3,10 @@ import SwiftUI
 struct EditorView: View {
     @Bindable var editor: EditorViewModel
     let settings: SettingsViewModel
+    let openHistory: () -> Void
     let openSettings: () -> Void
 
-    @FocusState private var sourceIsFocused: Bool
+    @State private var sourceIsFocused = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -15,15 +16,14 @@ struct EditorView: View {
                 sourceHeader
                 sourceEditor
                 primaryAction
-                stateLine
-                resultSection
+                resultHeader
+                resultSurface
                 privacyNote
             }
-            .padding(.top, 14)
+            .padding(.top, 8)
             .padding(.horizontal, 16)
-            .padding(.bottom, 16)
+            .padding(.bottom, 10)
         }
-        .frame(width: 420, height: 560)
         .background(AppTheme.window)
         .task {
             sourceIsFocused = true
@@ -42,26 +42,22 @@ struct EditorView: View {
                     .foregroundStyle(AppTheme.textFaint)
             }
 
-            HStack {
-                Button {
-                    editor.clear()
-                    sourceIsFocused = true
-                } label: {
-                    Image(systemName: "trash")
-                        .font(.system(size: 14, weight: .regular))
+            HStack(spacing: 2) {
+                Spacer()
+
+                Button(action: openHistory) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.system(size: 14))
                         .frame(width: 30, height: 30)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(QuietIconButtonStyle())
-                .disabled(!editor.canClear)
-                .help("Очистить исходный и готовый текст")
-                .accessibilityLabel("Очистить")
-
-                Spacer()
+                .help("История последних обработок")
+                .accessibilityLabel("Открыть историю")
 
                 Button(action: openSettings) {
                     Image(systemName: "gearshape")
-                        .font(.system(size: 15, weight: .regular))
+                        .font(.system(size: 15))
                         .frame(width: 30, height: 30)
                         .contentShape(Rectangle())
                 }
@@ -93,36 +89,42 @@ struct EditorView: View {
                 .monospacedDigit()
                 .foregroundStyle(AppTheme.textFaint)
         }
-        .frame(height: 24)
-        .padding(.bottom, 5)
+        .frame(height: 22)
+        .padding(.bottom, 4)
     }
 
     private var sourceEditor: some View {
-        ZStack(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: 8)
-                .fill(editor.isSourceEditable ? AppTheme.raised : AppTheme.surface)
+        HStack(spacing: 0) {
+            AlignedTextView(
+                text: $editor.source,
+                isFocused: $sourceIsFocused,
+                placeholder: "Вставь сюда надиктованный текст…",
+                isEditable: editor.isSourceEditable
+            )
 
-            TextEditor(text: $editor.source)
-                .font(.system(size: 13))
-                .foregroundStyle(
-                    editor.isSourceEditable ? AppTheme.text : AppTheme.textSoft
-                )
-                .scrollContentBackground(.hidden)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 5)
-                .focused($sourceIsFocused)
-                .disabled(!editor.isSourceEditable)
+            VStack {
+                Button {
+                    editor.clear()
+                    sourceIsFocused = true
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 14))
+                        .frame(width: 34, height: 30)
+                }
+                .buttonStyle(QuietIconButtonStyle())
+                .disabled(!editor.canClear || !editor.isSourceEditable)
+                .opacity(editor.source.isEmpty ? 0 : 1)
+                .help("Очистить исходный и готовый текст")
+                .accessibilityLabel("Очистить текст")
 
-            if editor.source.isEmpty {
-                Text("Вставь сюда надиктованный текст…")
-                    .font(.system(size: 13))
-                    .foregroundStyle(AppTheme.textFaint)
-                    .padding(.horizontal, 11)
-                    .padding(.vertical, 10)
-                    .allowsHitTesting(false)
+                Spacer()
             }
+            .frame(width: 40)
+            .padding(.top, 3)
         }
-        .frame(height: 132)
+        .frame(height: 126)
+        .background(editor.isSourceEditable ? AppTheme.raised : AppTheme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(
@@ -131,7 +133,7 @@ struct EditorView: View {
                 )
         }
         .accessibilityLabel("Исходная расшифровка")
-        .accessibilityHint("Вставь текст, который нужно очистить")
+        .accessibilityHint("Вставь текст, который нужно обработать")
     }
 
     private var primaryAction: some View {
@@ -182,76 +184,13 @@ struct EditorView: View {
         )
     }
 
-    @ViewBuilder
-    private var stateLine: some View {
-        HStack(spacing: 6) {
-            switch editor.state {
-            case .loading:
-                Circle()
-                    .fill(AppTheme.accent)
-                    .frame(width: 6, height: 6)
-                Text("Обрабатываю, обычно это занимает несколько секунд…")
-
-            case .success:
-                Text("Готово. Исходный текст не сохранён.")
-                    .foregroundStyle(AppTheme.accent)
-
-            case .error:
-                Text("Запрос не выполнен, исходный текст остался на месте.")
-                    .foregroundStyle(AppTheme.danger)
-
-            case .cancelled:
-                Text("Запрос отменён.")
-
-            case .empty, .ready:
-                EmptyView()
-            }
-        }
-        .font(.system(size: 10))
-        .foregroundStyle(AppTheme.textFaint)
-        .frame(height: 22, alignment: .topLeading)
-        .padding(.top, 6)
-        .accessibilityElement(children: .combine)
-    }
-
-    private var resultSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            resultHeader
-                .padding(.bottom, 5)
-
-            resultSurface
-        }
-        .padding(.top, 3)
-        .frame(maxHeight: .infinity, alignment: .top)
-    }
-
     private var resultHeader: some View {
-        HStack {
-            Text("Готовый текст")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(AppTheme.textSoft)
-
-            Spacer()
-
-            if editor.state == .success {
-                if editor.copiedConfirmationVisible {
-                    Text("Скопировано")
-                        .font(.system(size: 10))
-                        .foregroundStyle(AppTheme.accent)
-                }
-
-                Button {
-                    editor.copyResult()
-                } label: {
-                    Label("Скопировать", systemImage: "doc.on.doc")
-                        .font(.system(size: 11, weight: .semibold))
-                }
-                .buttonStyle(PrototypeTextButtonStyle())
-                .disabled(!editor.canCopy)
-                .accessibilityHint("Копирует готовый текст в системный буфер")
-            }
-        }
-        .frame(height: 24)
+        Text("Готовый текст")
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(AppTheme.textSoft)
+            .frame(height: 22)
+            .padding(.top, 8)
+            .padding(.bottom, 4)
     }
 
     @ViewBuilder
@@ -260,27 +199,25 @@ struct EditorView: View {
             switch editor.state {
             case .loading:
                 loadingResult
-
             case .error:
                 errorResult
-
             case .success:
                 successResult
-
-            case .empty, .ready, .cancelled:
+            case .cancelled:
+                cancelledResult
+            case .empty, .ready:
                 emptyResult
             }
         }
-        .frame(height: 146)
+        .frame(height: 172)
     }
 
     private var emptyResult: some View {
-        Text("Здесь появится очищенный текст. Без пояснений и ответа на его содержание.")
+        Text("Здесь появится обработанный текст")
             .font(.system(size: 11))
-            .multilineTextAlignment(.center)
             .foregroundStyle(AppTheme.textFaint)
-            .padding(24)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(12)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(AppTheme.surface, in: RoundedRectangle(cornerRadius: 8))
             .overlay {
                 RoundedRectangle(cornerRadius: 8)
@@ -292,35 +229,30 @@ struct EditorView: View {
     }
 
     private var loadingResult: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            skeletonLine(width: 1)
-            skeletonLine(width: 0.88)
-            skeletonLine(width: 0.93)
-            skeletonLine(width: 0.68)
-            Spacer()
+        VStack(spacing: 8) {
+            ProgressView()
+                .controlSize(.small)
+            Text("Обрабатываю…")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(AppTheme.textSoft)
+            Text(
+                "Запрос завершится не позднее чем через \(Int(OpenAICompatibleClient.processingTimeout)) секунд"
+            )
+                .font(.system(size: 10))
+                .foregroundStyle(AppTheme.textFaint)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 15)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(AppTheme.surface, in: RoundedRectangle(cornerRadius: 8))
         .overlay {
             RoundedRectangle(cornerRadius: 8)
-                .stroke(AppTheme.line, style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                .stroke(AppTheme.line, lineWidth: 1)
         }
+        .accessibilityElement(children: .combine)
         .accessibilityLabel("Текст обрабатывается")
     }
 
-    private func skeletonLine(width: CGFloat) -> some View {
-        GeometryReader { geometry in
-            RoundedRectangle(cornerRadius: 4)
-                .fill(AppTheme.line)
-                .frame(width: geometry.size.width * width, height: 10)
-        }
-        .frame(height: 10)
-    }
-
     private var errorResult: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 6) {
             Text("Не удалось обработать текст")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(AppTheme.danger)
@@ -328,7 +260,7 @@ struct EditorView: View {
             Text(editor.errorMessage ?? "Проверь настройки и попробуй ещё раз.")
                 .font(.system(size: 11))
                 .foregroundStyle(Color(red: 0.435, green: 0.290, blue: 0.278))
-                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
 
             Button("Открыть настройки", action: openSettings)
                 .buttonStyle(PrototypeErrorLinkStyle())
@@ -345,16 +277,65 @@ struct EditorView: View {
         .accessibilityElement(children: .combine)
     }
 
-    private var successResult: some View {
-        ScrollView {
-            Text(editor.result ?? "")
-                .font(.system(size: 13))
-                .foregroundStyle(AppTheme.text)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-                .padding(10)
+    private var cancelledResult: some View {
+        VStack(spacing: 6) {
+            Image(systemName: "xmark.circle")
+                .font(.system(size: 18))
+                .foregroundStyle(AppTheme.textFaint)
+            Text("Обработка отменена")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(AppTheme.textSoft)
+            Text("Исходный текст остался на месте.")
+                .font(.system(size: 10))
+                .foregroundStyle(AppTheme.textFaint)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(AppTheme.surface, in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(AppTheme.line, lineWidth: 1)
+        }
+    }
+
+    private var successResult: some View {
+        HStack(spacing: 0) {
+            AlignedTextView(
+                text: .constant(editor.result ?? ""),
+                isEditable: false
+            )
+
+            VStack(spacing: 2) {
+                Button {
+                    editor.copyResult()
+                } label: {
+                    Image(
+                        systemName: editor.copiedConfirmationVisible
+                            ? "checkmark"
+                            : "doc.on.doc"
+                    )
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(width: 34, height: 30)
+                }
+                .buttonStyle(QuietIconButtonStyle())
+                .disabled(!editor.canCopy)
+                .help(
+                    editor.copiedConfirmationVisible
+                        ? "Скопировано"
+                        : "Скопировать готовый текст"
+                )
+                .accessibilityLabel(
+                    editor.copiedConfirmationVisible
+                        ? "Скопировано"
+                        : "Скопировать готовый текст"
+                )
+
+                Spacer()
+            }
+            .frame(width: 40)
+            .padding(.top, 3)
+        }
+        .background(AppTheme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(AppTheme.line, lineWidth: 1)
@@ -363,30 +344,17 @@ struct EditorView: View {
     }
 
     private var privacyNote: some View {
-        Label("История текстов не сохраняется", systemImage: "lock.fill")
-            .font(.system(size: 10))
-            .foregroundStyle(AppTheme.textFaint)
-            .frame(height: 29, alignment: .bottomLeading)
+        Label(
+            "Последние \(HistoryStore.maximumEntryCount) обработок хранятся только на этом Mac",
+            systemImage: "lock.fill"
+        )
+        .font(.system(size: 10))
+        .foregroundStyle(AppTheme.textFaint)
+        .frame(height: 28, alignment: .bottomLeading)
     }
 
     private var characterCount: String {
-        "\(editor.source.count) \(Self.characterWord(for: editor.source.count))"
-    }
-
-    private static func characterWord(for count: Int) -> String {
-        let lastTwo = count % 100
-        let last = count % 10
-        if (11...14).contains(lastTwo) {
-            return "знаков"
-        }
-        switch last {
-        case 1:
-            return "знак"
-        case 2...4:
-            return "знака"
-        default:
-            return "знаков"
-        }
+        CharacterCountFormatter.string(for: editor.source.count)
     }
 
     private var primaryActionTitle: String {
@@ -394,11 +362,11 @@ struct EditorView: View {
         case .loading:
             "Отменить"
         case .success:
-            "Очистить ещё раз"
+            "Отправить ещё раз"
         case .error:
             "Повторить"
         case .empty, .ready, .cancelled:
-            "Очистить текст"
+            "Отправить"
         }
     }
 
@@ -414,7 +382,10 @@ private struct PrototypePrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .foregroundStyle(foreground)
-            .background(background(configuration.isPressed), in: RoundedRectangle(cornerRadius: 8))
+            .background(
+                background(configuration.isPressed),
+                in: RoundedRectangle(cornerRadius: 8)
+            )
             .offset(y: configuration.isPressed && enabled ? 1 : 0)
     }
 
@@ -436,19 +407,6 @@ private struct PrototypePrimaryButtonStyle: ButtonStyle {
     }
 }
 
-private struct PrototypeTextButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .foregroundStyle(AppTheme.accent)
-            .padding(.horizontal, 7)
-            .frame(height: 26)
-            .background(
-                configuration.isPressed ? AppTheme.accentSoft : .clear,
-                in: RoundedRectangle(cornerRadius: 6)
-            )
-    }
-}
-
 private struct PrototypeErrorLinkStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -462,7 +420,9 @@ private struct PrototypeErrorLinkStyle: ButtonStyle {
 struct QuietIconButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .foregroundStyle(configuration.isPressed ? AppTheme.text : AppTheme.textSoft)
+            .foregroundStyle(
+                configuration.isPressed ? AppTheme.text : AppTheme.textSoft
+            )
             .background(
                 configuration.isPressed ? AppTheme.surface : .clear,
                 in: RoundedRectangle(cornerRadius: 7)

@@ -1,9 +1,14 @@
 import Foundation
+import OSLog
 
 struct OpenAICompatibleClient: Sendable {
     static let maximumResponseBytes = 4 * 1_024 * 1_024
     static let processingTimeout: TimeInterval = 90
     static let connectionCheckTimeout: TimeInterval = 30
+    private static let logger = Logger(
+        subsystem: "dev.gotacat.Rusifikator",
+        category: "network"
+    )
 
     private let protocolClasses: [AnyClass]?
 
@@ -75,6 +80,10 @@ struct OpenAICompatibleClient: Sendable {
             requestCode: requestCode,
             timeoutSeconds: Int(timeoutInterval)
         )
+        let startedAt = Date()
+        Self.logger.info(
+            "Request \(requestCode, privacy: .public) started; host=\(endpoint.host ?? "-", privacy: .public); timeout=\(Int(timeoutInterval), privacy: .public)s"
+        )
 
         let data: Data
         do {
@@ -86,22 +95,55 @@ struct OpenAICompatibleClient: Sendable {
                 )
             )
         } catch let error as APIError {
+            Self.logFailure(
+                error,
+                requestCode: requestCode,
+                startedAt: startedAt
+            )
             throw error
         } catch is CancellationError {
+            Self.logFailure(
+                APIError.cancelled,
+                requestCode: requestCode,
+                startedAt: startedAt
+            )
             throw APIError.cancelled
         } catch let error as URLError {
             if error.code == .cancelled {
+                Self.logFailure(
+                    APIError.cancelled,
+                    requestCode: requestCode,
+                    startedAt: startedAt
+                )
                 throw APIError.cancelled
             }
             if error.code == .timedOut {
-                throw APIError.clientTimeout(
+                let apiError = APIError.clientTimeout(
                     seconds: Int(timeoutInterval),
                     requestCode: requestCode
                 )
+                Self.logFailure(
+                    apiError,
+                    requestCode: requestCode,
+                    startedAt: startedAt
+                )
+                throw apiError
             }
-            throw APIError.transport(requestCode: requestCode)
+            let apiError = APIError.transport(requestCode: requestCode)
+            Self.logFailure(
+                apiError,
+                requestCode: requestCode,
+                startedAt: startedAt
+            )
+            throw apiError
         } catch {
-            throw APIError.transport(requestCode: requestCode)
+            let apiError = APIError.transport(requestCode: requestCode)
+            Self.logFailure(
+                apiError,
+                requestCode: requestCode,
+                startedAt: startedAt
+            )
+            throw apiError
         }
 
         let response: ChatCompletionResponse
@@ -111,17 +153,38 @@ struct OpenAICompatibleClient: Sendable {
                 from: data
             )
         } catch {
+            Self.logFailure(
+                APIError.invalidResponse,
+                requestCode: requestCode,
+                startedAt: startedAt
+            )
             throw APIError.invalidResponse
         }
 
         guard let content = response.choices.first?.message.content else {
+            Self.logFailure(
+                APIError.emptyResponse,
+                requestCode: requestCode,
+                startedAt: startedAt
+            )
             throw APIError.emptyResponse
         }
 
         let normalized = Self.normalizeContent(content)
         guard !normalized.isEmpty else {
+            Self.logFailure(
+                APIError.emptyResponse,
+                requestCode: requestCode,
+                startedAt: startedAt
+            )
             throw APIError.emptyResponse
         }
+        let elapsedMilliseconds = Int(
+            Date().timeIntervalSince(startedAt) * 1_000
+        )
+        Self.logger.info(
+            "Request \(requestCode, privacy: .public) succeeded in \(elapsedMilliseconds, privacy: .public)ms"
+        )
         return normalized
     }
 
@@ -144,6 +207,19 @@ struct OpenAICompatibleClient: Sendable {
 
     static func requestCode(for requestID: UUID) -> String {
         String(requestID.uuidString.prefix(8))
+    }
+
+    private static func logFailure(
+        _ error: APIError,
+        requestCode: String,
+        startedAt: Date
+    ) {
+        let elapsedMilliseconds = Int(
+            Date().timeIntervalSince(startedAt) * 1_000
+        )
+        logger.error(
+            "Request \(requestCode, privacy: .public) failed as \(String(describing: error), privacy: .public) after \(elapsedMilliseconds, privacy: .public)ms"
+        )
     }
 
     static func endpoint(for baseURL: URL) throws -> URL {

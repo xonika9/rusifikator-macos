@@ -3,12 +3,22 @@ import SwiftUI
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    let editor = EditorViewModel()
-    let settings = SettingsViewModel()
-    let coordinator = PopoverCoordinator()
+    let history: HistoryStore
+    let editor: EditorViewModel
+    let settings: SettingsViewModel
+    let coordinator: PopoverCoordinator
 
     private let popover = NSPopover()
     private var statusItem: NSStatusItem?
+
+    override init() {
+        let history = HistoryStore()
+        self.history = history
+        editor = EditorViewModel(history: history)
+        settings = SettingsViewModel()
+        coordinator = PopoverCoordinator()
+        super.init()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         configurePopover()
@@ -17,6 +27,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         statusItem = nil
+    }
+
+    func applicationShouldTerminate(
+        _ sender: NSApplication
+    ) -> NSApplication.TerminateReply {
+        Task {
+            await history.flushPendingPersistence()
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
+    func applicationShouldHandleReopen(
+        _ sender: NSApplication,
+        hasVisibleWindows flag: Bool
+    ) -> Bool {
+        coordinator.page = .editor
+        showPopover()
+        return true
     }
 
     func openSettings() {
@@ -31,11 +60,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func configurePopover() {
         popover.behavior = .transient
         popover.animates = true
-        popover.contentSize = NSSize(width: 420, height: 560)
+        popover.contentSize = NSSize(
+            width: PopoverLayout.width,
+            height: PopoverLayout.height
+        )
         popover.contentViewController = NSHostingController(
             rootView: PopoverRootView(
                 coordinator: coordinator,
                 editor: editor,
+                history: history,
                 settings: settings
             )
         )

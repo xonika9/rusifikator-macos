@@ -321,6 +321,29 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(model.connectionState, .success)
     }
 
+    func testUnknownConnectionErrorDoesNotExposeSensitiveDescription() async {
+        let (defaults, suiteName) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let checker = ControlledConnectionChecker()
+        let model = SettingsViewModel(
+            store: SettingsStore(defaults: defaults),
+            credentials: MemoryCredentialStore(),
+            connectionChecker: checker,
+            loginItem: LoginItemController(service: FakeSettingsLoginItemService())
+        )
+        model.draftAPIKey = "key"
+
+        model.checkConnection()
+        let checkStarted = await waitForConnectionCallCount(1, checker: checker)
+        XCTAssertTrue(checkStarted)
+        await checker.fail(call: 0, with: SensitiveConnectionError())
+
+        await waitForConnectionState(
+            .failure("Не удалось выполнить действие. Попробуй ещё раз."),
+            model: model
+        )
+    }
+
     func testRequiresApprovalIsShownAsEnabledAndCanBeDisabled() {
         let (defaults, suiteName) = makeDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -546,6 +569,12 @@ private struct FailingSaveCredentialStore: CredentialStore {
     }
 
     func deleteAPIKey() throws {}
+}
+
+private struct SensitiveConnectionError: LocalizedError {
+    var errorDescription: String? {
+        "SECRET_API_KEY SECRET_SOURCE_TEXT"
+    }
 }
 
 @MainActor
