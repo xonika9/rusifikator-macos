@@ -1,0 +1,411 @@
+import Foundation
+import XCTest
+@testable import Rusifikator
+
+@MainActor
+final class EditorViewModelTests: XCTestCase {
+    private let baseURL = URL(string: "https://example.com")!
+
+    func testInitialAndWhitespaceOnlySourceStayEmptyAndCannotSubmit() {
+        let client = ControlledEditorAPIClient()
+        let model = makeModel(client: client)
+
+        XCTAssertEqual(model.state, .empty)
+        XCTAssertFalse(model.canSubmit)
+        XCTAssertFalse(model.canCancel)
+        XCTAssertFalse(model.canCopy)
+
+        model.source = " \n\t "
+        model.submit(
+            baseURL: baseURL,
+            model: "model",
+            apiKey: "key",
+            systemPrompt: "system"
+        )
+
+        XCTAssertEqual(model.state, .empty)
+        XCTAssertFalse(model.canSubmit)
+    }
+
+    func testSourceTransitionsBetweenEmptyAndReady() {
+        let model = makeModel(client: ControlledEditorAPIClient())
+
+        model.source = "Расшифровка"
+        XCTAssertEqual(model.state, .ready)
+        XCTAssertTrue(model.canSubmit)
+
+        model.source = ""
+        XCTAssertEqual(model.state, .empty)
+        XCTAssertFalse(model.canSubmit)
+    }
+
+    func testSubmitUsesImmutableSnapshotAndRejectsSecondSubmitWhileLoading() async {
+        let client = ControlledEditorAPIClient()
+        let model = makeModel(client: client)
+        model.source = "Первый текст"
+
+        model.submit(
+            baseURL: baseURL,
+            model: "first-model",
+            apiKey: "first-key",
+            systemPrompt: "first-system"
+        )
+        model.submit(
+            baseURL: URL(string: "https://second.example")!,
+            model: "second-model",
+            apiKey: "second-key",
+            systemPrompt: "second-system"
+        )
+
+        await waitForCallCount(1, client: client)
+        let calls = await client.recordedCalls()
+
+        XCTAssertEqual(model.state, .loading)
+        XCTAssertFalse(model.canSubmit)
+        XCTAssertTrue(model.canCancel)
+        XCTAssertFalse(model.isSourceEditable)
+        XCTAssertEqual(calls.count, 1)
+        XCTAssertEqual(calls[0].source, "Первый текст")
+        XCTAssertEqual(calls[0].baseURL, baseURL)
+        XCTAssertEqual(calls[0].model, "first-model")
+        XCTAssertEqual(calls[0].apiKey, "first-key")
+        XCTAssertEqual(calls[0].systemPrompt, "first-system")
+
+        await client.succeed(call: 0, with: "Готово")
+        await waitForState(.success, model: model)
+    }
+
+    func testSuccessPublishesOnlyCurrentResult() async {
+        let client = ControlledEditorAPIClient()
+        let model = makeModel(client: client)
+        model.source = "Исходник"
+
+        model.submit(
+            baseURL: baseURL,
+            model: "model",
+            apiKey: "key",
+            systemPrompt: "system"
+        )
+        await waitForCallCount(1, client: client)
+        await client.succeed(call: 0, with: "Готовый текст")
+        await waitForState(.success, model: model)
+
+        XCTAssertEqual(model.source, "Исходник")
+        XCTAssertEqual(model.result, "Готовый текст")
+        XCTAssertNil(model.errorMessage)
+        XCTAssertTrue(model.canCopy)
+        XCTAssertTrue(model.canSubmit)
+        XCTAssertFalse(model.canCancel)
+        XCTAssertTrue(model.isSourceEditable)
+    }
+
+    func testErrorRetainsSourceAndEditingRemovesStaleError() async {
+        let client = ControlledEditorAPIClient()
+        let model = makeModel(client: client)
+        model.source = "Исходник"
+
+        model.submit(
+            baseURL: baseURL,
+            model: "model",
+            apiKey: "key",
+            systemPrompt: "system"
+        )
+        await waitForCallCount(1, client: client)
+        await client.fail(call: 0, with: .rateLimited)
+        await waitForState(.error, model: model)
+
+        XCTAssertEqual(model.source, "Исходник")
+        XCTAssertEqual(
+            model.errorMessage,
+            APIError.rateLimited.localizedDescription
+        )
+        XCTAssertNil(model.result)
+        XCTAssertTrue(model.canSubmit)
+
+        model.source = "Исправленный исходник"
+
+        XCTAssertEqual(model.state, .ready)
+        XCTAssertNil(model.errorMessage)
+        XCTAssertNil(model.result)
+    }
+
+    func testEditingAfterSuccessRemovesStaleResult() async {
+        let client = ControlledEditorAPIClient()
+        let model = makeModel(client: client)
+        model.source = "Исходник"
+
+        model.submit(
+            baseURL: baseURL,
+            model: "model",
+            apiKey: "key",
+            systemPrompt: "system"
+        )
+        await waitForCallCount(1, client: client)
+        await client.succeed(call: 0, with: "Результат")
+        await waitForState(.success, model: model)
+
+        model.source = "Новый исходник"
+
+        XCTAssertEqual(model.state, .ready)
+        XCTAssertNil(model.result)
+        XCTAssertNil(model.errorMessage)
+        XCTAssertFalse(model.canCopy)
+    }
+
+    func testCancelRetainsSourceAndIgnoresLateSuccess() async {
+        let client = ControlledEditorAPIClient()
+        let model = makeModel(client: client)
+        model.source = "Не удалять"
+
+        model.submit(
+            baseURL: baseURL,
+            model: "model",
+            apiKey: "key",
+            systemPrompt: "system"
+        )
+        await waitForCallCount(1, client: client)
+        model.cancel()
+
+        XCTAssertEqual(model.state, .cancelled)
+        XCTAssertEqual(model.source, "Не удалять")
+        XCTAssertNil(model.result)
+        XCTAssertNil(model.errorMessage)
+        XCTAssertTrue(model.canSubmit)
+
+        await client.succeed(call: 0, with: "Запоздалый ответ")
+        await Task.yield()
+
+        XCTAssertEqual(model.state, .cancelled)
+        XCTAssertNil(model.result)
+    }
+
+    func testClearDuringLoadingStaysCompletelyEmptyAfterLateResponse() async {
+        let client = ControlledEditorAPIClient()
+        let model = makeModel(client: client)
+        model.source = "Секретный исходник"
+
+        model.submit(
+            baseURL: baseURL,
+            model: "model",
+            apiKey: "key",
+            systemPrompt: "system"
+        )
+        await waitForCallCount(1, client: client)
+        model.clear()
+
+        XCTAssertEqual(model.state, .empty)
+        XCTAssertEqual(model.source, "")
+        XCTAssertNil(model.result)
+        XCTAssertNil(model.errorMessage)
+        XCTAssertFalse(model.copiedConfirmationVisible)
+
+        await client.succeed(call: 0, with: "Запоздалый результат")
+        await Task.yield()
+
+        XCTAssertEqual(model.state, .empty)
+        XCTAssertEqual(model.source, "")
+        XCTAssertNil(model.result)
+        XCTAssertNil(model.errorMessage)
+    }
+
+    func testRetryCreatesFreshIndependentRequest() async {
+        let client = ControlledEditorAPIClient()
+        let model = makeModel(client: client)
+        model.source = "Первая версия"
+
+        model.submit(
+            baseURL: baseURL,
+            model: "model-a",
+            apiKey: "key-a",
+            systemPrompt: "system-a"
+        )
+        await waitForCallCount(1, client: client)
+        await client.fail(call: 0, with: .transport)
+        await waitForState(.error, model: model)
+
+        model.source = "Вторая версия"
+        model.submit(
+            baseURL: URL(string: "https://other.example/v1")!,
+            model: "model-b",
+            apiKey: "key-b",
+            systemPrompt: "system-b"
+        )
+        await waitForCallCount(2, client: client)
+        await client.succeed(call: 1, with: "Второй результат")
+        await waitForState(.success, model: model)
+
+        let calls = await client.recordedCalls()
+        XCTAssertEqual(calls.count, 2)
+        XCTAssertNotEqual(calls[0].id, calls[1].id)
+        XCTAssertEqual(calls.map(\.source), ["Первая версия", "Вторая версия"])
+        XCTAssertEqual(calls[1].model, "model-b")
+        XCTAssertEqual(model.result, "Второй результат")
+        XCTAssertFalse(calls[1].source.contains("Первая версия"))
+        XCTAssertFalse(calls[1].source.contains("Первый результат"))
+    }
+
+    func testLateFirstCallCannotOverwriteCompletedSecondCall() async {
+        let client = ControlledEditorAPIClient()
+        let model = makeModel(client: client)
+        model.source = "Первый"
+
+        model.submit(
+            baseURL: baseURL,
+            model: "model",
+            apiKey: "key",
+            systemPrompt: "system"
+        )
+        await waitForCallCount(1, client: client)
+        model.cancel()
+
+        model.source = "Второй"
+        model.submit(
+            baseURL: baseURL,
+            model: "model",
+            apiKey: "key",
+            systemPrompt: "system"
+        )
+        await waitForCallCount(2, client: client)
+        await client.succeed(call: 1, with: "Актуальный")
+        await waitForState(.success, model: model)
+
+        await client.succeed(call: 0, with: "Устаревший")
+        await Task.yield()
+
+        XCTAssertEqual(model.state, .success)
+        XCTAssertEqual(model.source, "Второй")
+        XCTAssertEqual(model.result, "Актуальный")
+    }
+
+    func testClearResetsSuccessAndCancelledStates() async {
+        let client = ControlledEditorAPIClient()
+        let model = makeModel(client: client)
+        model.source = "Исходник"
+        model.submit(
+            baseURL: baseURL,
+            model: "model",
+            apiKey: "key",
+            systemPrompt: "system"
+        )
+        await waitForCallCount(1, client: client)
+        await client.succeed(call: 0, with: "Результат")
+        await waitForState(.success, model: model)
+
+        model.clear()
+
+        XCTAssertEqual(model.state, .empty)
+        XCTAssertEqual(model.source, "")
+        XCTAssertNil(model.result)
+        XCTAssertNil(model.errorMessage)
+
+        model.source = "Ещё исходник"
+        model.submit(
+            baseURL: baseURL,
+            model: "model",
+            apiKey: "key",
+            systemPrompt: "system"
+        )
+        await waitForCallCount(2, client: client)
+        model.cancel()
+        model.clear()
+
+        XCTAssertEqual(model.state, .empty)
+        XCTAssertEqual(model.source, "")
+
+        await client.succeed(call: 1, with: "Запоздалый результат")
+        await Task.yield()
+        XCTAssertEqual(model.state, .empty)
+    }
+
+    func testCopyDelegatesToClipboardWithoutChangingEditorContent() async {
+        let client = ControlledEditorAPIClient()
+        let clipboard = ClipboardSpy()
+        let model = makeModel(client: client, clipboard: clipboard)
+        model.source = "Исходник"
+        model.submit(
+            baseURL: baseURL,
+            model: "model",
+            apiKey: "key",
+            systemPrompt: "system"
+        )
+        await waitForCallCount(1, client: client)
+        await client.succeed(call: 0, with: "Скопировать")
+        await waitForState(.success, model: model)
+
+        model.copyResult()
+
+        XCTAssertEqual(clipboard.copiedValues, ["Скопировать"])
+        XCTAssertEqual(model.source, "Исходник")
+        XCTAssertEqual(model.result, "Скопировать")
+        XCTAssertEqual(model.state, .success)
+        XCTAssertTrue(model.copiedConfirmationVisible)
+    }
+
+    private func makeModel(
+        client: ControlledEditorAPIClient,
+        clipboard: ClipboardSpy = ClipboardSpy()
+    ) -> EditorViewModel {
+        EditorViewModel(apiClient: client, clipboard: clipboard)
+    }
+
+    private func waitForCallCount(
+        _ expectedCount: Int,
+        client: ControlledEditorAPIClient
+    ) async {
+        for _ in 0..<200 {
+            if await client.recordedCalls().count == expectedCount {
+                return
+            }
+            await Task.yield()
+        }
+        XCTFail("Expected \(expectedCount) API calls")
+    }
+
+    private func waitForState(
+        _ expectedState: EditorState,
+        model: EditorViewModel
+    ) async {
+        for _ in 0..<200 {
+            if model.state == expectedState {
+                return
+            }
+            await Task.yield()
+        }
+        XCTFail("Expected state \(expectedState), got \(model.state)")
+    }
+}
+
+private actor ControlledEditorAPIClient: EditorAPIClient {
+    private var calls: [EditorRequest] = []
+    private var continuations: [
+        CheckedContinuation<String, any Error>
+    ] = []
+
+    func clean(_ request: EditorRequest) async throws -> String {
+        calls.append(request)
+        return try await withCheckedThrowingContinuation { continuation in
+            continuations.append(continuation)
+        }
+    }
+
+    func recordedCalls() -> [EditorRequest] {
+        calls
+    }
+
+    func succeed(call index: Int, with value: String) {
+        continuations[index].resume(returning: value)
+    }
+
+    func fail(call index: Int, with error: APIError) {
+        continuations[index].resume(throwing: error)
+    }
+}
+
+@MainActor
+private final class ClipboardSpy: ClipboardService {
+    private(set) var copiedValues: [String] = []
+
+    func copy(_ string: String) {
+        copiedValues.append(string)
+    }
+}
