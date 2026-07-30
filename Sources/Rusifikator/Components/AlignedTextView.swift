@@ -7,17 +7,20 @@ struct AlignedTextView: NSViewRepresentable {
 
     let placeholder: String
     let isEditable: Bool
+    let trailingAccessorySize: CGSize
 
     init(
         text: Binding<String>,
         isFocused: Binding<Bool> = .constant(false),
         placeholder: String = "",
-        isEditable: Bool = true
+        isEditable: Bool = true,
+        trailingAccessorySize: CGSize = .zero
     ) {
         _text = text
         _isFocused = isFocused
         self.placeholder = placeholder
         self.isEditable = isEditable
+        self.trailingAccessorySize = trailingAccessorySize
     }
 
     func makeCoordinator() -> Coordinator {
@@ -66,6 +69,7 @@ struct AlignedTextView: NSViewRepresentable {
 
     private func updateDynamicProperties(_ container: AlignedTextContainer) {
         let textView = container.textView
+        container.trailingAccessorySize = trailingAccessorySize
         if textView.isEditable != isEditable {
             textView.isEditable = isEditable
         }
@@ -109,6 +113,21 @@ final class AlignedTextContainer: NSView {
     let scrollView = NSScrollView()
     let textView = NSTextView()
     let placeholderLabel = PassthroughLabel(labelWithString: "")
+
+    var trailingAccessorySize = CGSize.zero {
+        didSet {
+            guard trailingAccessorySize != oldValue else {
+                return
+            }
+            scrollView.scrollerInsets = NSEdgeInsets(
+                top: trailingAccessorySize.height,
+                left: 0,
+                bottom: 0,
+                right: 0
+            )
+            needsLayout = true
+        }
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -158,6 +177,39 @@ final class AlignedTextContainer: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layout() {
+        super.layout()
+        updateTextExclusionPath()
+    }
+
+    private func updateTextExclusionPath() {
+        guard let textContainer = textView.textContainer else {
+            return
+        }
+        guard trailingAccessorySize.width > 0, trailingAccessorySize.height > 0 else {
+            if !textContainer.exclusionPaths.isEmpty {
+                textContainer.exclusionPaths = []
+            }
+            return
+        }
+
+        let containerWidth = textContainer.size.width
+        guard containerWidth > 0 else {
+            return
+        }
+
+        let exclusionWidth = min(trailingAccessorySize.width, containerWidth)
+        let exclusionRect = NSRect(
+            x: containerWidth - exclusionWidth,
+            y: 0,
+            width: exclusionWidth,
+            height: trailingAccessorySize.height
+        )
+        if textContainer.exclusionPaths.first?.bounds != exclusionRect {
+            textContainer.exclusionPaths = [NSBezierPath(rect: exclusionRect)]
+        }
     }
 }
 

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct EditorView: View {
     private static let textSurfaceHeight: CGFloat = 149
+    private static let textSurfaceAccessorySize = CGSize(width: 40, height: 36)
 
     @Bindable var editor: EditorViewModel
     let settings: SettingsViewModel
@@ -96,31 +97,27 @@ struct EditorView: View {
     }
 
     private var sourceEditor: some View {
-        HStack(spacing: 0) {
-            AlignedTextView(
-                text: $editor.source,
-                isFocused: $sourceIsFocused,
-                placeholder: "Вставь сюда надиктованный текст…",
-                isEditable: editor.isSourceEditable
-            )
-
-            VStack {
-                Button {
-                    editor.clear()
-                    sourceIsFocused = true
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 14))
-                        .frame(width: 34, height: 30)
-                }
-                .buttonStyle(QuietIconButtonStyle())
-                .disabled(!editor.canClear || !editor.isSourceEditable)
-                .opacity(editor.source.isEmpty ? 0 : 1)
-                .help("Очистить исходный и готовый текст")
-                .accessibilityLabel("Очистить текст")
-
-                Spacer()
+        AlignedTextView(
+            text: $editor.source,
+            isFocused: $sourceIsFocused,
+            placeholder: "Вставь сюда надиктованный текст…",
+            isEditable: editor.isSourceEditable,
+            trailingAccessorySize: Self.textSurfaceAccessorySize
+        )
+        .overlay(alignment: .topTrailing) {
+            Button {
+                editor.clear()
+                sourceIsFocused = true
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 14))
+                    .frame(width: 34, height: 30)
             }
+            .buttonStyle(QuietIconButtonStyle())
+            .disabled(!editor.canClear || !editor.isSourceEditable)
+            .opacity(editor.source.isEmpty ? 0 : 1)
+            .help("Очистить исходный и готовый текст")
+            .accessibilityLabel("Очистить текст")
             .frame(width: 40)
             .padding(.top, 3)
         }
@@ -300,39 +297,35 @@ struct EditorView: View {
     }
 
     private var successResult: some View {
-        HStack(spacing: 0) {
-            AlignedTextView(
-                text: .constant(editor.result ?? ""),
-                isEditable: false
-            )
-
-            VStack(spacing: 2) {
-                Button {
-                    editor.copyResult()
-                } label: {
-                    Image(
-                        systemName: editor.copiedConfirmationVisible
-                            ? "checkmark"
-                            : "doc.on.doc"
-                    )
-                    .font(.system(size: 13, weight: .medium))
-                    .frame(width: 34, height: 30)
-                }
-                .buttonStyle(QuietIconButtonStyle())
-                .disabled(!editor.canCopy)
-                .help(
-                    editor.copiedConfirmationVisible
-                        ? "Скопировано"
-                        : "Скопировать готовый текст"
+        AlignedTextView(
+            text: .constant(editor.result ?? ""),
+            isEditable: false,
+            trailingAccessorySize: Self.textSurfaceAccessorySize
+        )
+        .overlay(alignment: .topTrailing) {
+            Button {
+                editor.copyResult()
+            } label: {
+                Image(
+                    systemName: editor.copiedConfirmationVisible
+                        ? "checkmark"
+                        : "doc.on.doc"
                 )
-                .accessibilityLabel(
-                    editor.copiedConfirmationVisible
-                        ? "Скопировано"
-                        : "Скопировать готовый текст"
-                )
-
-                Spacer()
+                .font(.system(size: 13, weight: .medium))
+                .frame(width: 34, height: 30)
             }
+            .buttonStyle(QuietIconButtonStyle())
+            .disabled(!editor.canCopy)
+            .help(
+                editor.copiedConfirmationVisible
+                    ? "Скопировано"
+                    : "Скопировать готовый текст"
+            )
+            .accessibilityLabel(
+                editor.copiedConfirmationVisible
+                    ? "Скопировано"
+                    : "Скопировать готовый текст"
+            )
             .frame(width: 40)
             .padding(.top, 3)
         }
