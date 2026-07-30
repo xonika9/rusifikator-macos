@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct EditorView: View {
+    private static let textSurfaceHeight: CGFloat = 149
+
     @Bindable var editor: EditorViewModel
     let settings: SettingsViewModel
     let openHistory: () -> Void
@@ -122,7 +124,7 @@ struct EditorView: View {
             .frame(width: 40)
             .padding(.top, 3)
         }
-        .frame(height: 126)
+        .frame(height: Self.textSurfaceHeight)
         .background(editor.isSourceEditable ? AppTheme.raised : AppTheme.surface)
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay {
@@ -209,7 +211,7 @@ struct EditorView: View {
                 emptyResult
             }
         }
-        .frame(height: 172)
+        .frame(height: Self.textSurfaceHeight)
     }
 
     private var emptyResult: some View {
