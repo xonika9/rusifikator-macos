@@ -15,6 +15,7 @@ let package = Package(
             name: "Rusifikator",
             exclude: ["Resources/Rusifikator-Info.plist"],
             resources: [
+                .copy("Resources/Rusifikator.icns"),
                 .copy("Resources/SystemPrompt.txt")
             ],
             swiftSettings: [

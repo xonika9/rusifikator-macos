@@ -8,6 +8,7 @@ app_path=${app_path:A}
 info_plist="$app_path/Contents/Info.plist"
 executable="$app_path/Contents/MacOS/Rusifikator"
 prompt="$app_path/Contents/Resources/SystemPrompt.txt"
+icon="$app_path/Contents/Resources/Rusifikator.icns"
 plist_buddy=/usr/libexec/PlistBuddy
 smoke_pids=()
 
@@ -76,7 +77,9 @@ plutil -lint "$info_plist"
 [[ "$("$plist_buddy" -c "Print :CFBundleDisplayName" "$info_plist")" == "Русификатор" ]]
 [[ "$("$plist_buddy" -c "Print :LSUIElement" "$info_plist")" == "true" ]]
 [[ "$("$plist_buddy" -c "Print :LSMinimumSystemVersion" "$info_plist")" == "26.0" ]]
+[[ "$("$plist_buddy" -c "Print :CFBundleIconFile" "$info_plist")" == "Rusifikator.icns" ]]
 cmp "$repo_root/Tests/Fixtures/ExpectedSystemPrompt.txt" "$prompt"
+[[ -s "$icon" ]]
 codesign --verify --deep --strict --verbose=2 "$app_path"
 
 before_pids=("${(@f)$(bundle_processes)}")

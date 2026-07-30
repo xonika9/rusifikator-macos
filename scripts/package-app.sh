@@ -28,6 +28,9 @@ install -m 644 "$info_plist_path" "$staging_app/Contents/Info.plist"
 install -m 644 \
   "$repo_root/Sources/Rusifikator/Resources/SystemPrompt.txt" \
   "$staging_app/Contents/Resources/SystemPrompt.txt"
+install -m 644 \
+  "$repo_root/Sources/Rusifikator/Resources/Rusifikator.icns" \
+  "$staging_app/Contents/Resources/Rusifikator.icns"
 
 plutil -lint "$staging_app/Contents/Info.plist"
 codesign --force --deep --sign - --timestamp=none "$staging_app"
