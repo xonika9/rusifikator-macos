@@ -1,0 +1,1230 @@
+<!doctype html>
+<!--
+THESIS: One clean sheet; the prototype refuses chat history, sidebars, and AI theater.
+OWN-WORLD: A near-white macOS utility window, system type, restrained green action, and quiet state surfaces.
+STORY: Paste a transcript, clean it, copy the result; configuration stays one step away.
+FIRST VIEWPORT: A 420 × 560 px popover with source above the primary action and result below it.
+FORM: Compact native utility, selected directly from the pinned brief; no concept seed was needed.
+-->
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Интерактивный локальный прототип macOS-приложения «Русификатор»">
+  <title>Русификатор — интерактивный прототип</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --canvas: #f3f0e8;
+      --canvas-line: #d8d2c6;
+      --window: #fcfcfb;
+      --surface: #f4f5f3;
+      --surface-raised: #ffffff;
+      --text: #1d211f;
+      --text-soft: #626864;
+      --text-faint: #858b87;
+      --line: #d9ddd9;
+      --line-strong: #c6cbc7;
+      --accent: #28715a;
+      --accent-hover: #215f4c;
+      --accent-pressed: #194c3d;
+      --accent-soft: #e3f0ea;
+      --danger: #a93f38;
+      --danger-soft: #f8e9e7;
+      --focus: rgba(40, 113, 90, 0.24);
+      --shadow-window:
+        0 22px 54px rgba(37, 42, 39, 0.16),
+        0 3px 10px rgba(37, 42, 39, 0.08);
+      --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+      --radius-control: 8px;
+      --radius-panel: 10px;
+      --radius-window: 14px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      min-height: 100%;
+      background: var(--canvas);
+      -webkit-text-size-adjust: 100%;
+    }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      padding: 28px 18px 44px;
+      background:
+        linear-gradient(var(--canvas-line), var(--canvas-line)) top 79px left / 100% 1px no-repeat,
+        var(--canvas);
+      color: var(--text);
+      font-family: var(--font-ui);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button,
+    input,
+    textarea {
+      font: inherit;
+    }
+
+    button {
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .showcase {
+      width: min(920px, 100%);
+      margin: 0 auto;
+    }
+
+    .showcase-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      min-height: 52px;
+      margin-bottom: 26px;
+    }
+
+    .showcase-title {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      min-width: 0;
+    }
+
+    .showcase-mark {
+      display: grid;
+      width: 30px;
+      height: 30px;
+      flex: none;
+      place-items: center;
+      border-radius: 8px;
+      background: var(--text);
+      color: #fff;
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .showcase-title h1 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 680;
+      letter-spacing: -0.01em;
+    }
+
+    .showcase-title p {
+      margin: 2px 0 0;
+      color: var(--text-soft);
+      font-size: 12px;
+    }
+
+    .dimension-label {
+      flex: none;
+      padding: 5px 8px;
+      border: 1px solid var(--canvas-line);
+      border-radius: 999px;
+      color: var(--text-soft);
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .prototype-layout {
+      display: grid;
+      grid-template-columns: 174px minmax(0, 420px);
+      justify-content: center;
+      align-items: start;
+      gap: 28px;
+    }
+
+    .demo-controls {
+      position: sticky;
+      top: 20px;
+      padding-top: 18px;
+    }
+
+    .demo-controls h2 {
+      margin: 0 0 9px;
+      color: var(--text-soft);
+      font-size: 11px;
+      font-weight: 650;
+      letter-spacing: 0.02em;
+    }
+
+    .demo-list {
+      display: grid;
+      gap: 3px;
+    }
+
+    .demo-button {
+      width: 100%;
+      padding: 7px 9px;
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--text-soft);
+      text-align: left;
+      cursor: pointer;
+      transition:
+        background 160ms ease-out,
+        color 160ms ease-out;
+    }
+
+    .demo-button:hover {
+      background: rgba(29, 33, 31, 0.055);
+      color: var(--text);
+    }
+
+    .demo-button:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px;
+    }
+
+    body[data-view="main"][data-state="empty"] [data-demo="empty"],
+    body[data-view="main"][data-state="ready"] [data-demo="ready"],
+    body[data-view="main"][data-state="loading"] [data-demo="loading"],
+    body[data-view="main"][data-state="success"] [data-demo="success"],
+    body[data-view="main"][data-state="error"] [data-demo="error"],
+    body[data-view="settings"] [data-demo="settings"] {
+      background: var(--accent-soft);
+      color: var(--accent-pressed);
+      font-weight: 630;
+    }
+
+    .demo-note {
+      max-width: 17ch;
+      margin: 14px 0 0;
+      color: var(--text-faint);
+      font-size: 11px;
+      line-height: 1.45;
+    }
+
+    .window-wrap {
+      position: relative;
+      padding-top: 13px;
+    }
+
+    .popover-arrow {
+      position: absolute;
+      z-index: 2;
+      top: 5px;
+      left: 50%;
+      width: 17px;
+      height: 17px;
+      border-radius: 3px 0 0;
+      background: var(--window);
+      box-shadow: -4px -4px 7px rgba(37, 42, 39, 0.035);
+      transform: translateX(-50%) rotate(45deg);
+    }
+
+    .app-window {
+      position: relative;
+      z-index: 1;
+      width: 420px;
+      height: 560px;
+      overflow: hidden;
+      border: 1px solid rgba(24, 31, 27, 0.13);
+      border-radius: var(--radius-window);
+      background: var(--window);
+      box-shadow: var(--shadow-window);
+    }
+
+    .app-view {
+      display: flex;
+      height: 100%;
+      flex-direction: column;
+    }
+
+    body[data-view="main"] .settings-view,
+    body[data-view="settings"] .main-view {
+      display: none;
+    }
+
+    .window-toolbar {
+      display: grid;
+      min-height: 46px;
+      grid-template-columns: 34px 1fr 34px;
+      align-items: center;
+      padding: 6px 10px;
+      border-bottom: 1px solid rgba(29, 33, 31, 0.08);
+    }
+
+    .toolbar-title {
+      min-width: 0;
+      text-align: center;
+    }
+
+    .toolbar-title strong {
+      display: block;
+      overflow: hidden;
+      font-size: 13px;
+      font-weight: 670;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .toolbar-title span {
+      display: block;
+      margin-top: 1px;
+      color: var(--text-faint);
+      font-size: 10px;
+    }
+
+    .icon-button {
+      display: grid;
+      width: 30px;
+      height: 30px;
+      padding: 0;
+      place-items: center;
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--text-soft);
+      cursor: pointer;
+      transition:
+        background 150ms ease-out,
+        color 150ms ease-out;
+    }
+
+    .icon-button:hover {
+      background: var(--surface);
+      color: var(--text);
+    }
+
+    .icon-button:focus-visible,
+    .text-button:focus-visible,
+    .primary-button:focus-visible,
+    .secondary-button:focus-visible {
+      outline: 3px solid var(--focus);
+      outline-offset: 1px;
+    }
+
+    .icon-button svg,
+    .text-button svg {
+      width: 16px;
+      height: 16px;
+      fill: none;
+      stroke: currentColor;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-width: 1.75;
+    }
+
+    .main-content,
+    .settings-content {
+      min-height: 0;
+      flex: 1;
+      padding: 14px 16px 16px;
+    }
+
+    .main-content {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .field-heading {
+      display: flex;
+      min-height: 24px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 5px;
+    }
+
+    .field-label {
+      color: var(--text-soft);
+      font-size: 11px;
+      font-weight: 650;
+    }
+
+    .field-meta {
+      color: var(--text-faint);
+      font-size: 10px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .source-field,
+    .result-field {
+      width: 100%;
+      resize: none;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-control);
+      background: var(--surface-raised);
+      color: var(--text);
+      font-size: 13px;
+      line-height: 1.45;
+      outline: none;
+      transition:
+        border-color 150ms ease-out,
+        box-shadow 150ms ease-out,
+        background 150ms ease-out;
+    }
+
+    .source-field {
+      height: 132px;
+      padding: 10px 11px;
+    }
+
+    .source-field::placeholder,
+    .result-field::placeholder {
+      color: #989d99;
+    }
+
+    .source-field:hover,
+    .result-field:hover {
+      border-color: var(--line-strong);
+    }
+
+    .source-field:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--focus);
+    }
+
+    .source-field:disabled {
+      background: var(--surface);
+      color: var(--text-soft);
+      cursor: default;
+    }
+
+    .primary-button {
+      position: relative;
+      width: 100%;
+      min-height: 38px;
+      margin-top: 10px;
+      padding: 8px 14px;
+      border: 0;
+      border-radius: var(--radius-control);
+      background: var(--accent);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 660;
+      cursor: pointer;
+      transition:
+        background 150ms ease-out,
+        transform 100ms ease-out,
+        opacity 150ms ease-out;
+    }
+
+    .primary-button:hover {
+      background: var(--accent-hover);
+    }
+
+    .primary-button:active {
+      background: var(--accent-pressed);
+      transform: translateY(1px);
+    }
+
+    body[data-state="empty"] .main-view .primary-button {
+      background: #cfd3d0;
+      color: #858a87;
+      cursor: not-allowed;
+    }
+
+    body[data-state="loading"] .main-view .primary-button {
+      background: var(--surface);
+      color: var(--text);
+      box-shadow: inset 0 0 0 1px var(--line);
+    }
+
+    .button-label {
+      display: none;
+    }
+
+    body[data-state="empty"] .label-default,
+    body[data-state="ready"] .label-default,
+    body[data-state="error"] .label-retry,
+    body[data-state="loading"] .label-cancel,
+    body[data-state="success"] .label-again {
+      display: inline;
+    }
+
+    .shortcut {
+      position: absolute;
+      top: 50%;
+      right: 10px;
+      padding: 2px 5px;
+      border: 1px solid rgba(255, 255, 255, 0.28);
+      border-radius: 5px;
+      color: rgba(255, 255, 255, 0.74);
+      font-size: 10px;
+      font-weight: 530;
+      transform: translateY(-50%);
+    }
+
+    body[data-state="empty"] .shortcut {
+      border-color: rgba(29, 33, 31, 0.08);
+      color: #989d99;
+    }
+
+    body[data-state="loading"] .shortcut {
+      display: none;
+    }
+
+    .state-line {
+      min-height: 22px;
+      padding-top: 6px;
+      color: var(--text-faint);
+      font-size: 10px;
+      line-height: 1.35;
+    }
+
+    .state-message {
+      display: none;
+    }
+
+    body[data-state="loading"] .status-loading,
+    body[data-state="error"] .status-error,
+    body[data-state="success"] .status-success,
+    body[data-state="cancelled"] .status-cancelled {
+      display: inline;
+    }
+
+    .status-loading::before {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      margin-right: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      content: "";
+      animation: pulse 1.1s ease-in-out infinite;
+    }
+
+    .status-error {
+      color: var(--danger);
+    }
+
+    .status-success {
+      color: var(--accent);
+    }
+
+    @keyframes pulse {
+      50% {
+        opacity: 0.3;
+        transform: scale(0.78);
+      }
+    }
+
+    .result-section {
+      min-height: 0;
+      flex: 1;
+      padding-top: 3px;
+    }
+
+    .result-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .text-button {
+      display: inline-flex;
+      min-height: 26px;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 7px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 630;
+      cursor: pointer;
+    }
+
+    .text-button:hover {
+      background: var(--accent-soft);
+    }
+
+    .copy-feedback {
+      color: var(--accent);
+      font-size: 10px;
+    }
+
+    .result-shell {
+      position: relative;
+      height: 146px;
+    }
+
+    .result-field {
+      height: 100%;
+      padding: 10px 11px;
+      background: var(--surface);
+    }
+
+    .empty-result,
+    .loading-result,
+    .error-result {
+      position: absolute;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      border: 1px dashed var(--line);
+      border-radius: var(--radius-control);
+      background: var(--surface);
+      color: var(--text-faint);
+      text-align: center;
+    }
+
+    .empty-result {
+      padding: 24px;
+      font-size: 11px;
+      line-height: 1.45;
+    }
+
+    .loading-result {
+      align-items: stretch;
+      flex-direction: column;
+      gap: 9px;
+      padding: 15px 12px;
+    }
+
+    .skeleton-line {
+      height: 10px;
+      border-radius: 4px;
+      background: #dfe3df;
+      animation: skeleton 1.3s ease-in-out infinite alternate;
+    }
+
+    .skeleton-line:nth-child(2) {
+      width: 88%;
+      animation-delay: 100ms;
+    }
+
+    .skeleton-line:nth-child(3) {
+      width: 93%;
+      animation-delay: 180ms;
+    }
+
+    .skeleton-line:nth-child(4) {
+      width: 68%;
+      animation-delay: 260ms;
+    }
+
+    @keyframes skeleton {
+      to {
+        background: #cfd5d0;
+      }
+    }
+
+    .error-result {
+      align-items: flex-start;
+      justify-content: flex-start;
+      flex-direction: column;
+      padding: 13px;
+      border: 1px solid rgba(169, 63, 56, 0.16);
+      background: var(--danger-soft);
+      color: var(--text);
+      text-align: left;
+    }
+
+    .error-result strong {
+      color: var(--danger);
+      font-size: 12px;
+    }
+
+    .error-result p {
+      margin: 5px 0 8px;
+      color: #6f4a47;
+      font-size: 11px;
+      line-height: 1.45;
+    }
+
+    .error-link {
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: var(--danger);
+      font-size: 11px;
+      font-weight: 650;
+      cursor: pointer;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+
+    body[data-state="empty"] .empty-result,
+    body[data-state="ready"] .empty-result,
+    body[data-state="cancelled"] .empty-result,
+    body[data-state="loading"] .loading-result,
+    body[data-state="error"] .error-result {
+      display: flex;
+    }
+
+    body:not([data-state="success"]) .result-field,
+    body:not([data-state="success"]) .result-actions {
+      visibility: hidden;
+    }
+
+    .privacy-note {
+      display: flex;
+      min-height: 29px;
+      align-items: flex-end;
+      gap: 5px;
+      padding-top: 8px;
+      color: var(--text-faint);
+      font-size: 10px;
+    }
+
+    .privacy-note svg {
+      width: 11px;
+      height: 11px;
+      flex: none;
+      fill: currentColor;
+    }
+
+    .settings-content {
+      overflow-y: auto;
+    }
+
+    .settings-intro {
+      margin: 1px 0 13px;
+      color: var(--text-soft);
+      font-size: 11px;
+      line-height: 1.45;
+    }
+
+    .form-group {
+      margin-bottom: 12px;
+    }
+
+    .form-label {
+      display: block;
+      margin-bottom: 5px;
+      color: var(--text-soft);
+      font-size: 11px;
+      font-weight: 650;
+    }
+
+    .single-line-input {
+      width: 100%;
+      height: 34px;
+      padding: 7px 9px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-control);
+      background: var(--surface-raised);
+      color: var(--text);
+      font-size: 12px;
+      outline: none;
+      transition:
+        border-color 150ms ease-out,
+        box-shadow 150ms ease-out;
+    }
+
+    .single-line-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--focus);
+    }
+
+    .secret-wrap {
+      position: relative;
+    }
+
+    .secret-wrap .single-line-input {
+      padding-right: 38px;
+    }
+
+    .secret-toggle {
+      position: absolute;
+      top: 2px;
+      right: 2px;
+    }
+
+    .form-hint {
+      margin: 4px 0 0;
+      color: var(--text-faint);
+      font-size: 10px;
+      line-height: 1.35;
+    }
+
+    .settings-row {
+      display: flex;
+      min-height: 42px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      margin: 2px 0 13px;
+      padding: 8px 0;
+      border-top: 1px solid rgba(29, 33, 31, 0.08);
+      border-bottom: 1px solid rgba(29, 33, 31, 0.08);
+    }
+
+    .settings-row strong {
+      display: block;
+      font-size: 11px;
+      font-weight: 650;
+    }
+
+    .settings-row span {
+      display: block;
+      margin-top: 2px;
+      color: var(--text-faint);
+      font-size: 10px;
+    }
+
+    .switch {
+      position: relative;
+      width: 34px;
+      height: 20px;
+      flex: none;
+    }
+
+    .switch input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+    }
+
+    .switch-track {
+      position: absolute;
+      inset: 0;
+      border-radius: 999px;
+      background: #c7cbc8;
+      cursor: pointer;
+      transition: background 150ms ease-out;
+    }
+
+    .switch-track::after {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+      content: "";
+      transition: transform 150ms ease-out;
+    }
+
+    .switch input:checked + .switch-track {
+      background: var(--accent);
+    }
+
+    .switch input:checked + .switch-track::after {
+      transform: translateX(14px);
+    }
+
+    .switch input:focus-visible + .switch-track {
+      outline: 3px solid var(--focus);
+      outline-offset: 2px;
+    }
+
+    .connection-panel {
+      display: flex;
+      min-height: 48px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 9px 10px;
+      border-radius: var(--radius-panel);
+      background: var(--surface);
+    }
+
+    .connection-status {
+      min-width: 0;
+      color: var(--text-soft);
+      font-size: 10px;
+      line-height: 1.35;
+    }
+
+    .connection-status strong {
+      display: block;
+      margin-bottom: 2px;
+      color: var(--text);
+      font-size: 11px;
+    }
+
+    .connection-copy {
+      display: none;
+    }
+
+    body[data-connection="idle"] .connection-idle,
+    body[data-connection="checking"] .connection-checking,
+    body[data-connection="success"] .connection-success {
+      display: inline;
+    }
+
+    body[data-connection="success"] .connection-status strong {
+      color: var(--accent);
+    }
+
+    .secondary-button {
+      min-height: 30px;
+      flex: none;
+      padding: 6px 10px;
+      border: 1px solid var(--line-strong);
+      border-radius: 7px;
+      background: var(--surface-raised);
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 630;
+      cursor: pointer;
+    }
+
+    .secondary-button:hover {
+      background: #f7f8f6;
+    }
+
+    body[data-connection="checking"] .check-button {
+      color: var(--text-faint);
+      cursor: wait;
+    }
+
+    .settings-footer {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      padding: 10px 16px 14px;
+      border-top: 1px solid rgba(29, 33, 31, 0.08);
+    }
+
+    .settings-footer .primary-button {
+      width: auto;
+      min-width: 92px;
+      min-height: 32px;
+      margin: 0;
+      padding: 6px 12px;
+      font-size: 11px;
+    }
+
+    .screen-reader-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    @media (max-width: 720px) {
+      body {
+        padding: 16px 12px 34px;
+        background: var(--canvas);
+      }
+
+      .showcase-header {
+        margin-bottom: 14px;
+      }
+
+      .dimension-label {
+        display: none;
+      }
+
+      .prototype-layout {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .demo-controls {
+        position: static;
+        width: min(420px, 100%);
+        padding: 0;
+      }
+
+      .demo-controls h2,
+      .demo-note {
+        display: none;
+      }
+
+      .demo-list {
+        display: flex;
+        gap: 4px;
+        padding-bottom: 3px;
+        overflow-x: auto;
+        scrollbar-width: none;
+      }
+
+      .demo-list::-webkit-scrollbar {
+        display: none;
+      }
+
+      .demo-button {
+        width: auto;
+        flex: none;
+        padding: 6px 8px;
+        background: rgba(255, 255, 255, 0.3);
+        font-size: 11px;
+      }
+    }
+
+    @media (max-width: 460px) {
+      .showcase-title p {
+        display: none;
+      }
+
+      .window-wrap,
+      .app-window {
+        width: 100%;
+      }
+
+      .window-wrap {
+        max-width: 420px;
+      }
+
+      .app-window {
+        height: min(560px, calc(100vh - 134px));
+        min-height: 520px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        scroll-behavior: auto !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+
+    @media print {
+      body {
+        padding: 0;
+        background: #fff;
+      }
+
+      .showcase-header,
+      .demo-controls,
+      .popover-arrow {
+        display: none;
+      }
+
+      .prototype-layout {
+        display: block;
+      }
+
+      .app-window {
+        margin: 0 auto;
+        box-shadow: none;
+      }
+    }
+  </style>
+</head>
+<body
+  data-view="main"
+  data-state="empty"
+  data-connection="idle"
+  onload="document.body.setDemo=function(state){clearTimeout(window.prototypeTimer);document.body.dataset.view='main';document.body.dataset.state=state;var source=document.getElementById('sourceText');var result=document.getElementById('resultText');source.disabled=state==='loading';source.value=state==='empty'?'':'Слушай, ну давай, наверное, завтра созвонимся после обеда, потому что утром у меня там встреча, и я, скорее всего, не успею всё нормально обсудить.';result.value='Давай завтра созвонимся после обеда: утром у меня встреча, и я, скорее всего, не успею всё нормально обсудить.';document.getElementById('charCount').textContent=source.value.length+' знаков';document.getElementById('copyFeedback').textContent='';if(state==='loading'){window.prototypeTimer=setTimeout(function(){document.body.dataset.state='success';source.disabled=false;},2200);}};document.body.setDemo('empty');"
+  onkeydown="if((event.metaKey||event.ctrlKey)&&event.key==='Enter'&&document.body.dataset.view==='main'){event.preventDefault();document.getElementById('processButton').click();}if((event.metaKey||event.ctrlKey)&&event.key===','){event.preventDefault();document.body.dataset.view='settings';}"
+>
+  <main class="showcase">
+    <header class="showcase-header">
+      <div class="showcase-title">
+        <div class="showcase-mark" aria-hidden="true">Р</div>
+        <div>
+          <h1>Русификатор</h1>
+          <p>Интерактивный прототип утилиты для macOS</p>
+        </div>
+      </div>
+      <div class="dimension-label">окно 420 × 560 px</div>
+    </header>
+
+    <div class="prototype-layout">
+      <aside class="demo-controls" aria-label="Состояния прототипа">
+        <h2>Показать состояние</h2>
+        <div class="demo-list">
+          <button class="demo-button" data-demo="empty" type="button" onclick="document.body.setDemo('empty')">Пусто</button>
+          <button class="demo-button" data-demo="ready" type="button" onclick="document.body.setDemo('ready')">Есть текст</button>
+          <button class="demo-button" data-demo="loading" type="button" onclick="document.body.setDemo('loading')">Обработка</button>
+          <button class="demo-button" data-demo="success" type="button" onclick="document.body.setDemo('success')">Готово</button>
+          <button class="demo-button" data-demo="error" type="button" onclick="document.body.setDemo('error')">Ошибка</button>
+          <button class="demo-button" data-demo="settings" type="button" onclick="document.body.dataset.view='settings';document.body.dataset.connection='idle'">Настройки</button>
+        </div>
+        <p class="demo-note">Панель нужна только для проверки состояний. В приложении её не будет.</p>
+      </aside>
+
+      <div class="window-wrap">
+        <div class="popover-arrow" aria-hidden="true"></div>
+        <section class="app-window" aria-label="Окно приложения Русификатор">
+          <div class="app-view main-view">
+            <header class="window-toolbar">
+              <span aria-hidden="true"></span>
+              <div class="toolbar-title">
+                <strong>Русификатор</strong>
+                <span>готовит текст к отправке</span>
+              </div>
+              <button class="icon-button" type="button" aria-label="Открыть настройки" title="Настройки (⌘,)" onclick="document.body.dataset.view='settings';document.body.dataset.connection='idle'">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 8.8a3.2 3.2 0 1 0 0 6.4 3.2 3.2 0 0 0 0-6.4Z"></path>
+                  <path d="M19 13.3v-2.6l-2-.7a7.3 7.3 0 0 0-.6-1.4l.9-1.9-1.9-1.9-1.9.9a7.3 7.3 0 0 0-1.4-.6l-.7-2H8.8l-.7 2a7.3 7.3 0 0 0-1.4.6l-1.9-.9-1.9 1.9.9 1.9a7.3 7.3 0 0 0-.6 1.4l-2 .7v2.6l2 .7c.1.5.3 1 .6 1.4l-.9 1.9 1.9 1.9 1.9-.9c.4.3.9.5 1.4.6l.7 2h2.6l.7-2c.5-.1 1-.3 1.4-.6l1.9.9 1.9-1.9-.9-1.9c.3-.4.5-.9.6-1.4l2-.7Z"></path>
+                </svg>
+              </button>
+            </header>
+
+            <div class="main-content">
+              <div class="field-heading">
+                <label class="field-label" for="sourceText">Расшифровка</label>
+                <span class="field-meta" id="charCount">0 знаков</span>
+              </div>
+              <textarea
+                class="source-field"
+                id="sourceText"
+                placeholder="Вставь сюда надиктованный текст…"
+                spellcheck="true"
+                oninput="document.getElementById('charCount').textContent=this.value.length+' знаков';document.body.dataset.state=this.value.trim()?'ready':'empty';document.getElementById('copyFeedback').textContent='';"
+              ></textarea>
+
+              <button
+                class="primary-button"
+                id="processButton"
+                type="button"
+                onclick="var source=document.getElementById('sourceText');if(document.body.dataset.state==='loading'){clearTimeout(window.prototypeTimer);document.body.dataset.state=source.value.trim()?'ready':'empty';source.disabled=false;return;}if(!source.value.trim()){return;}document.body.dataset.state='loading';source.disabled=true;clearTimeout(window.prototypeTimer);window.prototypeTimer=setTimeout(function(){document.getElementById('resultText').value='Давай завтра созвонимся после обеда: утром у меня встреча, и я, скорее всего, не успею всё нормально обсудить.';document.body.dataset.state='success';source.disabled=false;},1400);"
+              >
+                <span class="button-label label-default">Очистить текст</span>
+                <span class="button-label label-cancel">Отменить</span>
+                <span class="button-label label-again">Очистить ещё раз</span>
+                <span class="button-label label-retry">Повторить</span>
+                <span class="shortcut">⌘ ↩</span>
+              </button>
+
+              <div class="state-line" role="status" aria-live="polite">
+                <span class="state-message status-loading">Обрабатываю, обычно это занимает несколько секунд…</span>
+                <span class="state-message status-success">Готово. Исходный текст не сохранён.</span>
+                <span class="state-message status-error">Запрос не выполнен, исходный текст остался на месте.</span>
+                <span class="state-message status-cancelled">Запрос отменён.</span>
+              </div>
+
+              <section class="result-section" aria-labelledby="resultLabel">
+                <div class="field-heading">
+                  <span class="field-label" id="resultLabel">Готовый текст</span>
+                  <div class="result-actions">
+                    <span class="copy-feedback" id="copyFeedback" role="status" aria-live="polite"></span>
+                    <button
+                      class="text-button"
+                      type="button"
+                      onclick="var result=document.getElementById('resultText');var feedback=document.getElementById('copyFeedback');var clearFeedback=function(){setTimeout(function(){feedback.textContent='';},1800);};var selectFallback=function(){result.focus();result.select();feedback.textContent='Выделено';clearFeedback();};if(navigator.clipboard&amp;&amp;window.isSecureContext){navigator.clipboard.writeText(result.value).then(function(){feedback.textContent='Скопировано';clearFeedback();}).catch(selectFallback);}else{selectFallback();}"
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <rect x="8" y="8" width="11" height="11" rx="2"></rect>
+                        <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path>
+                      </svg>
+                      Скопировать
+                    </button>
+                  </div>
+                </div>
+
+                <div class="result-shell">
+                  <textarea class="result-field" id="resultText" readonly aria-label="Готовый текст"></textarea>
+                  <div class="empty-result">Здесь появится очищенный текст. Без пояснений и ответа на его содержание.</div>
+                  <div class="loading-result" aria-label="Текст обрабатывается">
+                    <span class="skeleton-line"></span>
+                    <span class="skeleton-line"></span>
+                    <span class="skeleton-line"></span>
+                    <span class="skeleton-line"></span>
+                  </div>
+                  <div class="error-result" role="alert">
+                    <strong>Не удалось подключиться к серверу</strong>
+                    <p>Проверь адрес API и соединение. Можно повторить запрос, текст не потерян.</p>
+                    <button class="error-link" type="button" onclick="document.body.dataset.view='settings';document.body.dataset.connection='idle'">Открыть настройки</button>
+                  </div>
+                </div>
+              </section>
+
+              <div class="privacy-note">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M17 9h-1V7a4 4 0 0 0-8 0v2H7a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2Zm-7-2a2 2 0 0 1 4 0v2h-4V7Zm3 9.7V18h-2v-1.3a2 2 0 1 1 2 0Z"></path>
+                </svg>
+                История текстов не сохраняется
+              </div>
+            </div>
+          </div>
+
+          <div class="app-view settings-view">
+            <header class="window-toolbar">
+              <button class="icon-button" type="button" aria-label="Вернуться к тексту" title="Назад" onclick="document.body.dataset.view='main'">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m15 18-6-6 6-6"></path>
+                </svg>
+              </button>
+              <div class="toolbar-title">
+                <strong>Настройки</strong>
+                <span>OpenAI-совместимый API</span>
+              </div>
+              <span aria-hidden="true"></span>
+            </header>
+
+            <div class="settings-content">
+              <p class="settings-intro">Параметры хранятся только на этом Mac. API-ключ в приложении будет лежать в Keychain.</p>
+
+              <div class="form-group">
+                <label class="form-label" for="apiUrl">Адрес API</label>
+                <input class="single-line-input" id="apiUrl" type="url" value="https://llm.example.net/v1" spellcheck="false">
+                <p class="form-hint">Приложение добавит `/chat/completions` само.</p>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="apiKey">API-ключ</label>
+                <div class="secret-wrap">
+                  <input class="single-line-input" id="apiKey" type="password" value="sk-demo-not-a-real-key" autocomplete="off" spellcheck="false">
+                  <button
+                    class="icon-button secret-toggle"
+                    type="button"
+                    aria-label="Показать или скрыть API-ключ"
+                    onclick="var key=document.getElementById('apiKey');key.type=key.type==='password'?'text':'password';"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M2.5 12s3.5-5 9.5-5 9.5 5 9.5 5-3.5 5-9.5 5-9.5-5-9.5-5Z"></path>
+                      <circle cx="12" cy="12" r="2.5"></circle>
+                    </svg>
+                  </button>
+                </div>
+                <p class="form-hint">В прототипе указан ненастоящий демонстрационный ключ.</p>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="modelName">Модель</label>
+                <input class="single-line-input" id="modelName" type="text" value="voice-editor" spellcheck="false">
+                <p class="form-hint">Имя модели или алиаса на твоём сервере.</p>
+              </div>
+
+              <div class="settings-row">
+                <div>
+                  <strong>Запускать при входе</strong>
+                  <span>Значок всегда будет в строке меню</span>
+                </div>
+                <label class="switch">
+                  <span class="screen-reader-only">Запускать при входе</span>
+                  <input type="checkbox" checked>
+                  <span class="switch-track"></span>
+                </label>
+              </div>
+
+              <div class="connection-panel">
+                <div class="connection-status" role="status" aria-live="polite">
+                  <strong>
+                    <span class="connection-copy connection-idle">Соединение не проверено</span>
+                    <span class="connection-copy connection-checking">Проверяю соединение…</span>
+                    <span class="connection-copy connection-success">Соединение работает</span>
+                  </strong>
+                  <span>Проверка отправит короткий тестовый запрос.</span>
+                </div>
+                <button
+                  class="secondary-button check-button"
+                  type="button"
+                  onclick="if(document.body.dataset.connection==='checking'){return;}document.body.dataset.connection='checking';setTimeout(function(){document.body.dataset.connection='success';},1100);"
+                >Проверить</button>
+              </div>
+            </div>
+
+            <footer class="settings-footer">
+              <button class="secondary-button" type="button" onclick="document.body.dataset.view='main'">Отмена</button>
+              <button class="primary-button" type="button" onclick="document.body.dataset.view='main'">
+                <span class="button-label label-default" style="display:inline">Сохранить</span>
+              </button>
+            </footer>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

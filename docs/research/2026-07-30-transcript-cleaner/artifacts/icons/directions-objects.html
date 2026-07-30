@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>«Русификатор» — простые иконки</title>
+<style>
+:root{
+  --bg:#f4f0e7; --surface:#fffdf8; --text:#18201d; --soft:#5f6963; --line:rgba(24,32,29,.14);
+  --serif:"Iowan Old Style",Baskerville,Georgia,serif;
+  --sans:"Avenir Next",Avenir,"Segoe UI",system-ui,sans-serif;
+  --mono:"SFMono-Regular",Consolas,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:1rem/1.6 var(--sans);-webkit-font-smoothing:antialiased}
+.page{width:min(1120px,calc(100% - 2.5rem));margin-inline:auto;padding-block:2.5rem 4rem}
+h1{font:600 2rem/1.2 var(--serif);margin:0 0 .4rem}
+.lede{color:var(--soft);max-width:64ch;margin:0 0 2rem}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1.25rem}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:1.1rem 1.1rem 1.25rem}
+.art{display:flex;align-items:flex-end;gap:14px;margin-bottom:.85rem}
+.art svg{display:block;border-radius:22.5%}
+.n{font:600 .7rem/1 var(--mono);color:var(--soft);letter-spacing:.08em}
+h2{font:600 1.05rem/1.25 var(--serif);margin:.15rem 0 .3rem}
+p.d{margin:0;font-size:.82rem;line-height:1.5;color:var(--soft)}
+.foot{margin-top:2rem;font-size:.85rem;color:var(--soft);max-width:64ch}
+@media (max-width:900px){.grid{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<div class="page">
+<h1>Простые иконки</h1>
+<p class="lede">Предметы, которые опознаются без объяснения, и цвета повеселее. Никаких шифровок:
+если непонятно, что это, — значит, не годится.</p>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<linearGradient id="pOrange" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FF8F45"/><stop offset="1" stop-color="#E8571B"/></linearGradient>
+<linearGradient id="pBlue" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4F92F5"/><stop offset="1" stop-color="#2A5FD0"/></linearGradient>
+<linearGradient id="pCoral" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FF7A72"/><stop offset="1" stop-color="#E03B4E"/></linearGradient>
+<linearGradient id="pYellow" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFD24A"/><stop offset="1" stop-color="#F0A415"/></linearGradient>
+<linearGradient id="pViolet" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9377F5"/><stop offset="1" stop-color="#6240CC"/></linearGradient>
+<linearGradient id="pInk" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3E5060"/><stop offset="1" stop-color="#22303A"/></linearGradient>
+</defs></svg>
+
+<div class="grid">
+
+<div class="card">
+  <div class="art">
+    <svg width="170" height="170" viewBox="0 0 100 100"><rect width="100" height="100" fill="url(#pOrange)"/>
+      <g fill="#FFF8EE"><path d="M14 66 C20 46 38 40 58 40 h16 a10 10 0 0 1 10 10 v16 z"/>
+        <rect x="10" y="69" width="80" height="10" rx="5"/></g>
+      <path d="M42 40 C42 20 76 20 76 40" fill="none" stroke="#FFF8EE" stroke-width="9" stroke-linecap="round"/></svg>
+    <svg width="32" height="32" viewBox="0 0 100 100"><rect width="100" height="100" fill="url(#pOrange)"/>
+      <g fill="#FFF8EE"><path d="M14 66 C20 46 38 40 58 40 h16 a10 10 0 0 1 10 10 v16 z"/>
+        <rect x="10" y="69" width="80" height="10" rx="5"/></g>
+      <path d="M42 40 C42 20 76 20 76 40" fill="none" stroke="#FFF8EE" stroke-width="9" stroke-linecap="round"/></svg>
+  </div>
+  <div class="n">01</div><h2>Утюг</h2>
+  <p class="d">Разгладить мятую речь. Так по-русски и говорят про текст.</p>
+</div>
+
+<div class="card">
+  <div class="art">
+    <svg width="170" height="170" viewBox="0 0 100 100"><rect width="100" height="100" fill="url(#pBlue)"/>
+      <g transform="rotate(-12 50 50)">
+        <rect x="45" y="12" width="10" height="40" rx="5" fill="#FFF8EE"/>
+        <path d="M31 50 H69 L76 78 a4 4 0 0 1 -4 5 H28 a4 4 0 0 1 -4 -5 Z" fill="#FFF8EE"/>
+        <g fill="#2A5FD0"><rect x="38" y="62" width="4" height="21" rx="2"/>
+          <rect x="48" y="62" width="4" height="21" rx="2"/><rect x="58" y="62" width="4" height="21" rx="2"/></g></g></svg>
+    <svg width="32" height="32" viewBox="0 0 100 100"><rect width="100" height="100" fill="url(#pBlue)"/>
+      <g transform="rotate(-12 50 50)">
+        <rect x="45" y="12" width="10" height="40" rx="5" fill="#FFF8EE"/>
+        <path d="M31 50 H69 L76 78 a4 4 0 0 1 -4 5 H28 a4 4 0 0 1 -4 -5 Z" fill="#FFF8EE"/>
+        <g fill="#2A5FD0"><rect x="38" y="62" width="4" height="21" rx="2"/>
+          <rect x="48" y="62" width="4" height="21" rx="2"/><rect x="58" y="62" width="4" height="21" rx="2"/></g></g></svg>
+  </div>
+  <div class="n">02</div><h2>Веник</h2>
+  <p class="d">Вымести из расшифровки мусор. Самое прямое, что вообще можно нарисовать.</p>
+</div>
+
+<div class="card">
+  <div class="art">
+    <svg width="170" height="170" viewBox="0 0 100 100"><rect width="100" height="100" fill="url(#pCoral)"/>
+      <g fill="#FFF8EE"><rect x="13" y="20" width="74" height="13" rx="6"/>
+        <rect x="18" y="33" width="6" height="48" rx="3"/><rect x="30" y="33" width="6" height="48" rx="3"/>
+        <rect x="42" y="33" width="6" height="48" rx="3"/><rect x="54" y="33" width="6" height="48" rx="3"/>
+        <rect x="66" y="33" width="6" height="48" rx="3"/><rect x="76" y="33" width="6" height="48" rx="3"/></g></svg>
+    <svg width="32" height="32" viewBox="0 0 100 100"><rect width="100" height="100" fill="url(#pCoral)"/>
+      <g fill="#FFF8EE"><rect x="13" y="20" width="74" height="13" rx="6"/>
+        <rect x="18" y="33" width="6" height="48" rx="3"/><rect x="30" y="33" width="6" height="48" rx="3"/>
+        <rect x="42" y="33" width="6" height="48" rx="3"/><rect x="54" y="33" width="6" height="48" rx="3"/>
+        <rect x="66" y="33" width="6" height="48" rx="3"/><rect x="76" y="33" width="6" height="48" rx="3"/></g></svg>
+  </div>
+  <div class="n">03</div><h2>Расчёска</h2>
+  <p class="d">«Причесать текст» — ровно то, что делает приложение, и это живая русская фраза.</p>
+</div>
+
+<div class="card">
+  <div class="art">
+    <svg width="170" height="170" viewBox="0 0 100 100"><rect width="100" height="100" fill="url(#pYellow)"/>
+      <g transform="rotate(-14 50 46)">
+        <rect x="20" y="28" width="60" height="32" rx="6" fill="#FFF8EE"/>
+        <path d="M20 45 h60 v9 a6 6 0 0 1 -6 6 h-48 a6 6 0 0 1 -6 -6 z" fill="#E8574F"/></g>
+      <g fill="#23313B" opacity="0.55"><circle cx="70" cy="78" r="3.4"/><circle cx="57" cy="84" r="2.4"/>
+        <circle cx="81" cy="85" r="2.6"/></g></svg>
+    <svg width="32" height="32" viewBox="0 0 100 100"><rect width="100" height="100" fill="url(#pYellow)"/>
+      <g transform="rotate(-14 50 46)">
+        <rect x="20" y="28" width="60" height="32" rx="6" fill="#FFF8EE"/>
+        <path d="M20 45 h60 v9 a6 6 0 0 1 -6 6 h-48 a6 6 0 0 1 -6 -6 z" fill="#E8574F"/></g>
+      <g fill="#23313B" opacity="0.55"><circle cx="70" cy="78" r="3.4"/><circle cx="57" cy="84" r="2.4"/>
+        <circle cx="81" cy="85" r="2.6"/></g></svg>
+  </div>
+  <div class="n">04</div><h2>Ластик</h2>
+  <p class="d">Стереть лишнее. С крошкой — чтобы читалось действие, а не просто брусок.</p>
+</div>
+
+<div class="card">
+  <div class="art">
+    <svg width="170" height="170" viewBox="0 0 100 100"><rect width="100" height="100" fill="url(#pViolet)"/>
+      <g fill="none" stroke="#FFF8EE" stroke-linecap="round">
+        <path d="M30 18 L60 62" stroke-width="8"/><path d="M70 18 L40 62" stroke-width="8"/>
+        <circle cx="34" cy="74" r="9" stroke-width="7"/><circle cx="66" cy="74" r="9" stroke-width="7"/></g></svg>
+    <svg width="32" height="32" viewBox="0 0 100 100"><rect width="100" height="100" fill="url(#pViolet)"/>
+      <g fill="none" stroke="#FFF8EE" stroke-linecap="round">
+        <path d="M30 18 L60 62" stroke-width="8"/><path d="M70 18 L40 62" stroke-width="8"/>
+        <circle cx="34" cy="74" r="9" stroke-width="7"/><circle cx="66" cy="74" r="9" stroke-width="7"/></g></svg>
+  </div>
+  <div class="n">05</div><h2>Ножницы</h2>
+  <p class="d">Вырезать лишнее. Понятно всем, но и занято многими редакторами.</p>
+</div>
+
+<div class="card">
+  <div class="art">
+    <svg width="170" height="170" viewBox="0 0 100 100"><rect width="100" height="100" fill="url(#pInk)"/>
+      <rect x="30" y="20" width="11" height="60" rx="3" fill="#FFD24A"/>
+      <path d="M36 25.5 H58 A14 14 0 0 1 58 53.5 H36" fill="none" stroke="#FFD24A" stroke-width="11"/></svg>
+    <svg width="32" height="32" viewBox="0 0 100 100"><rect width="100" height="100" fill="url(#pInk)"/>
+      <rect x="30" y="20" width="11" height="60" rx="3" fill="#FFD24A"/>
+      <path d="M36 25.5 H58 A14 14 0 0 1 58 53.5 H36" fill="none" stroke="#FFD24A" stroke-width="11"/></svg>
+  </div>
+  <div class="n">06</div><h2>Буква Р</h2>
+  <p class="d">Тот же знак, но не белым по цветному: жёлтое по графиту на знак парковки уже не похоже.</p>
+</div>
+
+</div>
+
+<p class="foot">Маленькая копия рядом с каждой — 32 px. Цвет к форме не привязан: любой знак
+перекрашивается за минуту, сначала выбираем предмет.</p>
+
+</div>
+</body>
+</html>

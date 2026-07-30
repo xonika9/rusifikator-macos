@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="t">
+  <title id="t">Русификатор — app icon, направление «Ровный абзац»</title>
+  <defs>
+    <linearGradient id="plate" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2E7A61"/>
+      <stop offset="1" stop-color="#1E5946"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Плита во всё поле. Скругление и свет накладывает система. -->
+  <rect width="1024" height="1024" fill="url(#plate)"/>
+
+  <g fill="#F3F0E8">
+    <!-- Строка 1: три сегмента, два разрыва, вертикальный дребезг, конец на 75% меры -->
+    <g opacity="0.4">
+      <rect x="212" y="256" width="168" height="56" rx="16"/>
+      <rect x="424" y="262" width="126" height="56" rx="16"/>
+      <rect x="594" y="250" width="68"  height="56" rx="16"/>
+    </g>
+
+    <!-- Строка 2: два сегмента, один разрыв, конец на 88% меры -->
+    <g opacity="0.55">
+      <rect x="212" y="360" width="300" height="56" rx="16"/>
+      <rect x="556" y="357" width="184" height="56" rx="16"/>
+    </g>
+
+    <!-- Строка 3: целая, короткая -->
+    <rect x="212" y="464" width="420" height="56" rx="16" opacity="0.75"/>
+
+    <!-- Строка 4: целая, полная мера -->
+    <rect x="212" y="568" width="600" height="56" rx="16"/>
+
+    <!-- Строка 5: последняя строка абзаца -->
+    <rect x="212" y="672" width="360" height="56" rx="16"/>
+  </g>
+</svg>

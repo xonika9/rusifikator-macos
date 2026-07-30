@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>«Русификатор» — проверка иконок</title>
+<style>
+:root {
+  color-scheme: light;
+  --report-bg: #f4f0e7;
+  --report-surface: #fffdf8;
+  --report-text: #18201d;
+  --report-text-soft: #5f6963;
+  --report-accent: #1d6651;
+  --report-line: rgba(24, 32, 29, 0.14);
+  --report-font-display: "Iowan Old Style", "Baskerville", Georgia, serif;
+  --report-font-body: "Avenir Next", Avenir, "Segoe UI", system-ui, sans-serif;
+  --report-font-code: "SFMono-Regular", Consolas, monospace;
+  --report-radius-medium: 20px;
+  --report-shadow: 0 18px 52px rgba(39, 46, 42, 0.08);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--report-bg);
+  color: var(--report-text);
+  font: 1rem/1.6 var(--report-font-body);
+  -webkit-font-smoothing: antialiased;
+}
+.page { width: min(1040px, calc(100% - 2.5rem)); margin-inline: auto; padding-block: 3rem 5rem; }
+h1 { font: 600 2rem/1.2 var(--report-font-display); margin: 0 0 .5rem; }
+h2 { font: 600 1.35rem/1.25 var(--report-font-display); margin: 0 0 .25rem; }
+h3 { font: 600 .8rem/1.3 var(--report-font-body); letter-spacing: .08em; text-transform: uppercase;
+     color: var(--report-text-soft); margin: 0 0 1rem; }
+p { margin: 0 0 1rem; max-width: 68ch; }
+.lede { color: var(--report-text-soft); }
+code { font: .85em var(--report-font-code); background: rgba(24,32,29,.06); padding: .1em .35em; border-radius: 4px; }
+section.card {
+  background: var(--report-surface);
+  border: 1px solid var(--report-line);
+  border-radius: var(--report-radius-medium);
+  box-shadow: var(--report-shadow);
+  padding: 2rem;
+  margin-block: 2rem;
+}
+.block { padding-block: 1.5rem; border-top: 1px solid var(--report-line); }
+.block:first-of-type { border-top: 0; padding-top: .5rem; }
+.row { display: flex; align-items: flex-end; gap: 2rem; flex-wrap: wrap; }
+figure { margin: 0; text-align: center; }
+figcaption { font: .7rem/1.4 var(--report-font-code); color: var(--report-text-soft); margin-top: .5rem; }
+.masked { border-radius: 22.5%; overflow: hidden; display: block; }
+.gray { filter: grayscale(1); }
+.bar {
+  display: flex; align-items: center; gap: 14px;
+  height: 24px; padding-inline: 12px; border-radius: 6px;
+  font: 12px var(--report-font-body);
+}
+.bar.light { background: #eceae4; color: #16191a; border: 1px solid var(--report-line); }
+.bar.dark  { background: #2a2c2e; color: #f2f2f2; }
+.bar.dark img { filter: invert(1); }
+.bar span { opacity: .55; font-size: 11px; }
+.bars { display: flex; flex-direction: column; gap: 12px; max-width: 380px; }
+.note { font-size: .875rem; color: var(--report-text-soft); max-width: 68ch; }
+.pill { display: inline-block; font: 600 .7rem/1 var(--report-font-body); letter-spacing: .06em;
+        text-transform: uppercase; color: var(--report-accent); background: #dcebe4;
+        padding: .4em .7em; border-radius: 999px; margin-bottom: .75rem; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>«Русификатор» — проверка иконок</h1>
+<p class="lede">Лист для выбора: те же файлы, что уйдут в сборку, показаны в реальных размерах.
+Плита нарисована квадратной — скругление и свет macOS накладывает сама.</p>
+
+<section class="card">
+  <span class="pill">основное</span>
+  <h2>A. «Ровный абзац»</h2>
+  <p class="note">Разорванные строки сверху оседают в целые снизу. Глиф строки меню — та же мысль в двух полосах.</p>
+
+  <div class="block">
+    <h3>App icon — как есть и под маской системы</h3>
+    <div class="row">
+      <figure><img src="app-icon-paragraph.svg" width="256" height="256" alt=""><figcaption>256 · без маски</figcaption></figure>
+      <figure><img class="masked" src="app-icon-paragraph.svg" width="256" height="256" alt=""><figcaption>256 · маска</figcaption></figure>
+      <figure><img class="masked gray" src="app-icon-paragraph.svg" width="256" height="256" alt=""><figcaption>256 · без цвета</figcaption></figure>
+    </div>
+  </div>
+
+  <div class="block">
+    <h3>App icon — уменьшение</h3>
+    <div class="row">
+      <figure><img class="masked" src="app-icon-paragraph.svg" width="128" height="128" alt=""><figcaption>128</figcaption></figure>
+      <figure><img class="masked" src="app-icon-paragraph.svg" width="64" height="64" alt=""><figcaption>64</figcaption></figure>
+      <figure><img class="masked" src="app-icon-paragraph.svg" width="32" height="32" alt=""><figcaption>32</figcaption></figure>
+      <figure><img class="masked" src="app-icon-paragraph.svg" width="16" height="16" alt=""><figcaption>16</figcaption></figure>
+    </div>
+  </div>
+
+  <div class="block">
+    <h3>Строка меню</h3>
+    <div class="row">
+      <div class="bars">
+        <div class="bar light"><img src="menubar-paragraph.svg" width="18" height="18" alt=""><span>18 pt · светлая</span></div>
+        <div class="bar light"><img src="menubar-paragraph.svg" width="16" height="16" alt=""><span>16 pt · светлая</span></div>
+        <div class="bar dark"><img src="menubar-paragraph.svg" width="18" height="18" alt=""><span>18 pt · тёмная</span></div>
+        <div class="bar dark"><img src="menubar-paragraph.svg" width="16" height="16" alt=""><span>16 pt · тёмная</span></div>
+      </div>
+      <figure><img src="menubar-paragraph.svg" width="160" height="160" alt=""><figcaption>160 · геометрия</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <span class="pill">запасное</span>
+  <h2>C. «Знак корректора»</h2>
+  <p class="note">Типографский знак «закрыть пробел»: две встречные дуги стягивают место, откуда убран текст.</p>
+
+  <div class="block">
+    <h3>App icon — как есть и под маской системы</h3>
+    <div class="row">
+      <figure><img src="app-icon-closeup-mark.svg" width="256" height="256" alt=""><figcaption>256 · без маски</figcaption></figure>
+      <figure><img class="masked" src="app-icon-closeup-mark.svg" width="256" height="256" alt=""><figcaption>256 · маска</figcaption></figure>
+      <figure><img class="masked gray" src="app-icon-closeup-mark.svg" width="256" height="256" alt=""><figcaption>256 · без цвета</figcaption></figure>
+    </div>
+  </div>
+
+  <div class="block">
+    <h3>App icon — уменьшение</h3>
+    <div class="row">
+      <figure><img class="masked" src="app-icon-closeup-mark.svg" width="128" height="128" alt=""><figcaption>128</figcaption></figure>
+      <figure><img class="masked" src="app-icon-closeup-mark.svg" width="64" height="64" alt=""><figcaption>64</figcaption></figure>
+      <figure><img class="masked" src="app-icon-closeup-mark.svg" width="32" height="32" alt=""><figcaption>32</figcaption></figure>
+      <figure><img class="masked" src="app-icon-closeup-mark.svg" width="16" height="16" alt=""><figcaption>16</figcaption></figure>
+    </div>
+  </div>
+
+  <div class="block">
+    <h3>Строка меню</h3>
+    <div class="row">
+      <div class="bars">
+        <div class="bar light"><img src="menubar-closeup-mark.svg" width="18" height="18" alt=""><span>18 pt · светлая</span></div>
+        <div class="bar light"><img src="menubar-closeup-mark.svg" width="16" height="16" alt=""><span>16 pt · светлая</span></div>
+        <div class="bar dark"><img src="menubar-closeup-mark.svg" width="18" height="18" alt=""><span>18 pt · тёмная</span></div>
+        <div class="bar dark"><img src="menubar-closeup-mark.svg" width="16" height="16" alt=""><span>16 pt · тёмная</span></div>
+      </div>
+      <figure><img src="menubar-closeup-mark.svg" width="160" height="160" alt=""><figcaption>160 · геометрия</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<p class="note">Тёмная строка меню показана инверсией: система сама красит <code>template image</code> под фон.
+Файлы <code>*.svg</code> — источник, <code>*.png</code> рядом — запасные растры.</p>
+
+</div>
+</body>
+</html>
