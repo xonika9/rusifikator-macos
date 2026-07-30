@@ -11,9 +11,16 @@ struct OpenAICompatibleClient: Sendable {
     )
 
     private let protocolClasses: [AnyClass]?
+    private let diagnosticSink: @Sendable (NetworkDiagnosticEvent) -> Void
 
-    init(protocolClasses: [AnyClass]? = nil) {
+    init(
+        protocolClasses: [AnyClass]? = nil,
+        diagnosticSink: @escaping @Sendable (NetworkDiagnosticEvent) -> Void = {
+            OpenAICompatibleClient.log($0)
+        }
+    ) {
         self.protocolClasses = protocolClasses
+        self.diagnosticSink = diagnosticSink
     }
 
     func clean(
@@ -74,15 +81,23 @@ struct OpenAICompatibleClient: Sendable {
             throw APIError.invalidURL
         }
         let requestCode = Self.requestCode(for: requestID)
+        let startedAt = Date()
         let transfer = StreamingRequest(
             maximumBytes: Self.maximumResponseBytes,
             allowedOrigin: allowedOrigin,
             requestCode: requestCode,
-            timeoutSeconds: Int(timeoutInterval)
+            timeoutSeconds: Int(timeoutInterval),
+            startedAt: startedAt,
+            diagnosticSink: diagnosticSink
         )
-        let startedAt = Date()
-        Self.logger.info(
-            "Request \(requestCode, privacy: .public) started; host=\(endpoint.host ?? "-", privacy: .public); timeout=\(Int(timeoutInterval), privacy: .public)s"
+        diagnosticSink(
+            .started(
+                requestCode: requestCode,
+                host: endpoint.host ?? "-",
+                model: model,
+                timeoutSeconds: Int(timeoutInterval),
+                requestBodyBytes: request.httpBody?.count ?? 0
+            )
         )
 
         let data: Data
@@ -118,8 +133,10 @@ struct OpenAICompatibleClient: Sendable {
                 throw APIError.cancelled
             }
             if error.code == .timedOut {
-                let apiError = APIError.clientTimeout(
-                    seconds: Int(timeoutInterval),
+                let apiError = Self.apiError(
+                    for: error,
+                    elapsedSeconds: Date().timeIntervalSince(startedAt),
+                    timeoutSeconds: Int(timeoutInterval),
                     requestCode: requestCode
                 )
                 Self.logFailure(
@@ -207,6 +224,35 @@ struct OpenAICompatibleClient: Sendable {
 
     static func requestCode(for requestID: UUID) -> String {
         String(requestID.uuidString.prefix(8))
+    }
+
+    static func apiError(
+        for urlError: URLError,
+        elapsedSeconds: TimeInterval,
+        timeoutSeconds: Int,
+        requestCode: String
+    ) -> APIError {
+        guard urlError.code == .timedOut else {
+            return .transport(requestCode: requestCode)
+        }
+        if elapsedSeconds >= max(0, TimeInterval(timeoutSeconds) - 1) {
+            return .clientTimeout(
+                seconds: timeoutSeconds,
+                requestCode: requestCode
+            )
+        }
+        return .networkTimeout(requestCode: requestCode)
+    }
+
+    private static func log(_ event: NetworkDiagnosticEvent) {
+        switch event {
+        case .completed(_, .some, _, _):
+            logger.error("\(event.message, privacy: .public)")
+        case .started, .response, .metrics:
+            logger.info("\(event.message, privacy: .public)")
+        case .completed:
+            logger.debug("\(event.message, privacy: .public)")
+        }
     }
 
     private static func logFailure(
@@ -304,6 +350,8 @@ private final class StreamingRequest: NSObject, @unchecked Sendable {
     private let allowedOrigin: ProviderOrigin
     private let requestCode: String
     private let timeoutSeconds: Int
+    private let startedAt: Date
+    private let diagnosticSink: @Sendable (NetworkDiagnosticEvent) -> Void
     private let lock = NSLock()
 
     private var continuation: CheckedContinuation<Data, Error>?
@@ -317,19 +365,23 @@ private final class StreamingRequest: NSObject, @unchecked Sendable {
         maximumBytes: Int,
         allowedOrigin: ProviderOrigin,
         requestCode: String,
-        timeoutSeconds: Int
+        timeoutSeconds: Int,
+        startedAt: Date,
+        diagnosticSink: @escaping @Sendable (NetworkDiagnosticEvent) -> Void
     ) {
         self.maximumBytes = maximumBytes
         self.allowedOrigin = allowedOrigin
         self.requestCode = requestCode
         self.timeoutSeconds = timeoutSeconds
+        self.startedAt = startedAt
+        self.diagnosticSink = diagnosticSink
     }
 
     func load(
         _ request: URLRequest,
         configuration: URLSessionConfiguration
     ) async throws -> Data {
-        try await withTaskCancellationHandler {
+        return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 let task = lock.withLock { () -> URLSessionDataTask? in
                     guard !cancellationRequested else {
@@ -431,6 +483,13 @@ extension StreamingRequest: URLSessionDataDelegate {
             finish(.failure(APIError.invalidResponse), cancelTask: true)
             return
         }
+        diagnosticSink(
+            .response(
+                requestCode: requestCode,
+                statusCode: httpResponse.statusCode,
+                expectedBodyBytes: httpResponse.expectedContentLength
+            )
+        )
         if (300..<400).contains(httpResponse.statusCode),
            let location = httpResponse.value(forHTTPHeaderField: "Location"),
            let redirectURL = URL(
@@ -484,6 +543,19 @@ extension StreamingRequest: URLSessionTaskDelegate {
     func urlSession(
         _ session: URLSession,
         task: URLSessionTask,
+        didFinishCollecting metrics: URLSessionTaskMetrics
+    ) {
+        diagnosticSink(
+            .metrics(
+                requestCode: requestCode,
+                summary: NetworkMetricsFormatter.summary(for: metrics)
+            )
+        )
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
         willPerformHTTPRedirection response: HTTPURLResponse,
         newRequest request: URLRequest,
         completionHandler: @escaping (URLRequest?) -> Void
@@ -501,14 +573,31 @@ extension StreamingRequest: URLSessionTaskDelegate {
         task: URLSessionTask,
         didCompleteWithError error: (any Error)?
     ) {
+        let nsError = error as NSError?
+        diagnosticSink(
+            .completed(
+                requestCode: requestCode,
+                failure: nsError.map {
+                    NetworkDiagnosticFailure(
+                        domain: $0.domain,
+                        code: $0.code,
+                        description: $0.localizedDescription
+                    )
+                },
+                bytesSent: task.countOfBytesSent,
+                bytesReceived: task.countOfBytesReceived
+            )
+        )
         if let urlError = error as? URLError {
             if urlError.code == .cancelled {
                 finish(.failure(APIError.cancelled))
             } else if urlError.code == .timedOut {
                 finish(
                     .failure(
-                        APIError.clientTimeout(
-                            seconds: timeoutSeconds,
+                        OpenAICompatibleClient.apiError(
+                            for: urlError,
+                            elapsedSeconds: Date().timeIntervalSince(startedAt),
+                            timeoutSeconds: timeoutSeconds,
                             requestCode: requestCode
                         )
                     )

@@ -262,15 +262,68 @@ final class APIClientTests: XCTestCase {
         }
     }
 
-    func testClientTimeoutIsDistinctAndIncludesSafeRequestCode() async {
+    func testEarlySystemTimeoutIsReportedAsNetworkTimeout() async {
         URLProtocolStub.handler = { _ in
             throw URLError(.timedOut)
         }
 
         await assertRequestThrows(
-            .clientTimeout(seconds: 90, requestCode: "A1B2C3D4"),
+            .networkTimeout(requestCode: "A1B2C3D4"),
             requestID: fixedRequestID
         )
+    }
+
+    func testConfiguredDeadlineRemainsAClientTimeout() {
+        XCTAssertEqual(
+            OpenAICompatibleClient.apiError(
+                for: URLError(.timedOut),
+                elapsedSeconds: 90,
+                timeoutSeconds: 90,
+                requestCode: "A1B2C3D4"
+            ),
+            .clientTimeout(seconds: 90, requestCode: "A1B2C3D4")
+        )
+    }
+
+    func testNetworkDiagnosticsExposeRawFailureWithoutRequestSecretsOrContent() async throws {
+        let secret = "sk-secret-value"
+        let transcript = "Секретное содержимое расшифровки"
+        let messages = LockedMessages()
+        let client = OpenAICompatibleClient(
+            protocolClasses: [URLProtocolStub.self],
+            diagnosticSink: { messages.append($0.message) }
+        )
+        URLProtocolStub.handler = { _ in
+            throw URLError(.timedOut)
+        }
+
+        do {
+            _ = try await client.clean(
+                text: transcript,
+                baseURL: XCTUnwrap(URL(string: "https://example.com")),
+                model: "proxy/model",
+                apiKey: secret,
+                systemPrompt: "SYSTEM",
+                requestID: fixedRequestID
+            )
+            XCTFail("Expected timeout")
+        } catch {
+            XCTAssertEqual(
+                error as? APIError,
+                .networkTimeout(requestCode: "A1B2C3D4")
+            )
+        }
+
+        let captured = messages.values
+        let combined = captured.joined()
+        for message in captured {
+            XCTAssertFalse(message.contains(secret))
+            XCTAssertFalse(message.contains(transcript))
+        }
+        XCTAssertTrue(combined.contains("NSURLErrorDomain"))
+        XCTAssertTrue(combined.contains("-1001"))
+        XCTAssertTrue(combined.contains("host=example.com"))
+        XCTAssertTrue(combined.contains("model=proxy/model"))
     }
 
     func testCancellationIsCategorizedWithoutRetry() async throws {
@@ -376,7 +429,7 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(configuration.timeoutIntervalForResource, 30)
     }
 
-    func testConnectionCheckReportsItsThirtySecondClientTimeout() async {
+    func testConnectionCheckReportsEarlySystemTimeoutAsNetworkTimeout() async {
         URLProtocolStub.handler = { _ in
             throw URLError(.timedOut)
         }
@@ -389,8 +442,7 @@ final class APIClientTests: XCTestCase {
                 systemPrompt: "SYSTEM"
             )
             XCTFail("Expected timeout")
-        } catch let APIError.clientTimeout(seconds, requestCode) {
-            XCTAssertEqual(seconds, 30)
+        } catch let APIError.networkTimeout(requestCode) {
             XCTAssertEqual(requestCode.count, 8)
         } catch {
             XCTFail("Unexpected error: \(error)")
@@ -543,4 +595,19 @@ private func requestBody(_ request: URLRequest) throws -> Data {
         body.append(bytes, count: count)
     }
     return body
+}
+
+private final class LockedMessages: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [String] = []
+
+    var values: [String] {
+        lock.withLock { storage }
+    }
+
+    func append(_ message: String) {
+        lock.withLock {
+            storage.append(message)
+        }
+    }
 }
