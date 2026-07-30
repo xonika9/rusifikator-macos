@@ -174,9 +174,10 @@ struct HistoryView: View {
     }
 
     private func accessibilityPreview(for entry: HistoryEntry) -> String {
-        let limitedCharacters = Array(entry.result.prefix(141))
-        let preview = String(limitedCharacters.prefix(140))
-        return limitedCharacters.count > 140 ? "\(preview)…" : preview
+        let preview = entry.result.prefix(141)
+        return preview.count > 140
+            ? "\(preview.dropLast())…"
+            : String(preview)
     }
 
     private static let dateFormatter: DateFormatter = {

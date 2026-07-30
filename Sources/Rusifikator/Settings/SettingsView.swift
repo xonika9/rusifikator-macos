@@ -277,7 +277,11 @@ final class SettingsViewModel {
     }
 
     func refreshLoginItemStatus() {
-        loginItemStatus = loginItem.status
+        let status = loginItem.status
+        guard loginItemStatus != status else {
+            return
+        }
+        loginItemStatus = status
     }
 
     func setLoginItemEnabled(_ enabled: Bool) {

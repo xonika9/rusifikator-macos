@@ -45,7 +45,6 @@ struct AlignedTextView: NSViewRepresentable {
             container.textView.string = text
             container.textView.undoManager?.removeAllActions()
         }
-        container.placeholderLabel.isHidden = !text.isEmpty || placeholder.isEmpty
 
         guard isEditable, let window = container.window else {
             return
