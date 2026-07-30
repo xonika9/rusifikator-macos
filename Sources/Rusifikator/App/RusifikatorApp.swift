@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 enum FixedSystemPrompt {
@@ -24,36 +25,20 @@ enum FixedSystemPrompt {
 
 @main
 struct RusifikatorApp: App {
+    @State private var editor = EditorViewModel()
+    @State private var settings = SettingsViewModel()
+
     var body: some Scene {
         MenuBarExtra("Русификатор", systemImage: "character.cursor.ibeam") {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Русификатор")
-                    .font(.headline)
-
-                Text(FixedSystemPrompt.text.isEmpty ? "Ресурс не загружен" : "Готов к работе")
-                    .foregroundStyle(.secondary)
-
-                SettingsLink {
-                    Label("Настройки…", systemImage: "gearshape")
-                }
-
-                Divider()
-
-                Button("Выйти") {
-                    NSApplication.shared.terminate(nil)
-                }
-            }
-            .padding()
-            .frame(width: 260)
+            EditorView(editor: editor, settings: settings)
         }
         .menuBarExtraStyle(.window)
 
         Settings {
-            Form {
-                Text("Настройки будут доступны в следующем этапе.")
-            }
-            .padding()
-            .frame(width: 420, height: 140)
+            SettingsView(model: settings)
+        }
+        .commands {
+            AppCommands()
         }
     }
 }
