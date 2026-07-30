@@ -363,6 +363,37 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertNil(try credentials.apiKey(for: URL(string: "https://saved.example/")!))
     }
 
+    func testDiscardRestoresAppliedSettingsAndCredential() throws {
+        let (defaults, suiteName) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = SettingsStore(defaults: defaults)
+        store.providerURLString = "https://saved.example/v1"
+        store.model = "saved/model"
+        let credentials = MemoryCredentialStore()
+        try credentials.saveAPIKey(
+            "saved-secret",
+            for: URL(string: "https://saved.example/v1")!
+        )
+        let model = SettingsViewModel(
+            store: store,
+            credentials: credentials,
+            connectionChecker: RecordingConnectionChecker(),
+            loginItem: LoginItemController(service: FakeSettingsLoginItemService())
+        )
+
+        model.draftProviderURL = "https://other.example/v1"
+        model.draftModel = "other/model"
+        model.draftAPIKey = "other-secret"
+        model.discardDraftChanges()
+
+        XCTAssertEqual(model.draftProviderURL, "https://saved.example/v1")
+        XCTAssertEqual(model.draftModel, "saved/model")
+        XCTAssertEqual(model.draftAPIKey, "saved-secret")
+        XCTAssertEqual(model.currentAPIKey, "saved-secret")
+        XCTAssertEqual(model.connectionState, .idle)
+        XCTAssertEqual(model.saveState, .idle)
+    }
+
     private func makeDefaults() -> (UserDefaults, String) {
         let suiteName = "dev.gotacat.Rusifikator.settings-view-model.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!

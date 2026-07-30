@@ -248,6 +248,34 @@ final class SettingsViewModel {
         }
     }
 
+    func discardDraftChanges() {
+        invalidateConnectionCheck()
+        connectionState = .idle
+        saveState = .idle
+
+        let providerURL = store.providerURLString
+        draftProviderURL = providerURL
+        draftModel = store.model
+
+        guard let url = URL(string: providerURL) else {
+            currentAPIKey = ""
+            draftAPIKey = ""
+            loadMessage = APIError.invalidURL.localizedDescription
+            return
+        }
+
+        do {
+            let apiKey = try credentials.apiKey(for: url) ?? ""
+            currentAPIKey = apiKey
+            draftAPIKey = apiKey
+            loadMessage = nil
+        } catch {
+            currentAPIKey = ""
+            draftAPIKey = ""
+            loadMessage = Self.userMessage(for: error)
+        }
+    }
+
     func refreshLoginItemStatus() {
         loginItemStatus = loginItem.status
     }
@@ -349,98 +377,111 @@ private enum SettingsValidationError: LocalizedError {
 
 struct SettingsView: View {
     @Bindable var model: SettingsViewModel
+    let close: () -> Void
+
     @State private var resetConfirmationVisible = false
 
     var body: some View {
-        Form {
-            Section("Подключение") {
-                TextField("Адрес API", text: $model.draftProviderURL)
-                    .textContentType(.URL)
-                    .accessibilityHint("HTTPS-адрес OpenAI-совместимого сервера")
+        VStack(spacing: 0) {
+            toolbar
 
-                TextField("Модель", text: $model.draftModel)
-                    .accessibilityHint("Точное имя модели у провайдера")
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Параметры хранятся только на этом Mac. API-ключ лежит в Keychain.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(AppTheme.textSoft)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.bottom, 13)
 
-                HStack {
-                    Group {
-                        if model.showsAPIKey {
-                            TextField("API-ключ", text: $model.draftAPIKey)
-                        } else {
-                            SecureField("API-ключ", text: $model.draftAPIKey)
+                    fieldGroup(
+                        title: "Адрес API",
+                        hint: "Приложение само приведёт адрес к /v1/chat/completions."
+                    ) {
+                        styledTextField(
+                            TextField("https://example.com/v1", text: $model.draftProviderURL)
+                                .textContentType(.URL)
+                        )
+                        .accessibilityHint("HTTPS-адрес OpenAI-совместимого сервера")
+                    }
+
+                    fieldGroup(
+                        title: "API-ключ",
+                        hint: "Ключ не записывается в настройки или журналы."
+                    ) {
+                        ZStack(alignment: .trailing) {
+                            Group {
+                                if model.showsAPIKey {
+                                    TextField("API-ключ", text: $model.draftAPIKey)
+                                } else {
+                                    SecureField("API-ключ", text: $model.draftAPIKey)
+                                }
+                            }
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 12))
+                            .foregroundStyle(AppTheme.text)
+                            .padding(.leading, 9)
+                            .padding(.trailing, 38)
+                            .frame(height: 34)
+                            .background(AppTheme.raised, in: RoundedRectangle(cornerRadius: 8))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(AppTheme.line, lineWidth: 1)
+                            }
+                            .accessibilityLabel("API-ключ")
+
+                            Button {
+                                model.showsAPIKey.toggle()
+                            } label: {
+                                Image(systemName: model.showsAPIKey ? "eye.slash" : "eye")
+                                    .font(.system(size: 13))
+                                    .frame(width: 30, height: 30)
+                            }
+                            .buttonStyle(QuietIconButtonStyle())
+                            .padding(.trailing, 2)
+                            .help(model.showsAPIKey ? "Скрыть API-ключ" : "Показать API-ключ")
+                            .accessibilityLabel(
+                                model.showsAPIKey ? "Скрыть API-ключ" : "Показать API-ключ"
+                            )
                         }
                     }
-                    .accessibilityLabel("API-ключ")
 
-                    Button {
-                        model.showsAPIKey.toggle()
-                    } label: {
-                        Label(
-                            model.showsAPIKey ? "Скрыть ключ" : "Показать ключ",
-                            systemImage: model.showsAPIKey ? "eye.slash" : "eye"
+                    fieldGroup(
+                        title: "Модель",
+                        hint: "Точное имя модели или алиаса у провайдера."
+                    ) {
+                        styledTextField(
+                            TextField("Модель", text: $model.draftModel)
                         )
-                        .labelStyle(.iconOnly)
                     }
-                    .buttonStyle(.borderless)
-                    .help(model.showsAPIKey ? "Скрыть API-ключ" : "Показать API-ключ")
-                    .accessibilityLabel(model.showsAPIKey ? "Скрыть API-ключ" : "Показать API-ключ")
-                }
 
-                if let message = model.loadMessage {
-                    feedbackLabel(message, systemImage: "exclamationmark.triangle", color: .orange)
-                }
+                    loginItemRow
+                    connectionPanel
 
-                connectionFeedback
-
-                HStack {
-                    Button("Проверить соединение") {
-                        model.checkConnection()
+                    if let feedback = settingsFeedback {
+                        Text(feedback.text)
+                            .font(.system(size: 10))
+                            .foregroundStyle(feedback.color)
+                            .padding(.top, 8)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    .disabled(!model.canCheckConnection)
 
-                    Spacer()
-
-                    Button("Сохранить") {
-                        model.save()
+                    Button("Сбросить настройки…", role: .destructive) {
+                        resetConfirmationVisible = true
                     }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.return, modifiers: .command)
+                    .buttonStyle(.plain)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(AppTheme.danger)
+                    .padding(.top, 12)
                 }
+                .padding(.top, 14)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 12)
             }
 
-            Section("Система") {
-                Toggle(
-                    "Запускать при входе",
-                    isOn: Binding(
-                        get: { model.loginItemIsEnabled },
-                        set: { model.setLoginItemEnabled($0) }
-                    )
-                )
-                .disabled(model.loginItemStatus == .unavailable)
-
-                loginItemStatus
-
-                if model.loginItemRequiresApproval {
-                    Button("Открыть системные настройки") {
-                        model.openLoginItemSettings()
-                    }
-                }
-
-                if let message = model.loginItemMessage {
-                    feedbackLabel(message, systemImage: "exclamationmark.triangle", color: .red)
-                }
-            }
-
-            Section {
-                Button("Сбросить настройки…", role: .destructive) {
-                    resetConfirmationVisible = true
-                }
-            } footer: {
-                Text("Сброс удалит адрес, модель и API-ключ из Keychain.")
-            }
+            footer
         }
-        .formStyle(.grouped)
         .frame(width: 420, height: 560)
-        .navigationTitle("Настройки Русификатора")
+        .background(AppTheme.window)
         .onAppear {
             model.refreshLoginItemStatus()
         }
@@ -452,68 +493,276 @@ struct SettingsView: View {
                 model.reset()
             }
             Button("Отмена", role: .cancel) {}
+        } message: {
+            Text("Адрес и модель вернутся к исходным, ключ будет удалён из Keychain.")
         }
     }
 
-    @ViewBuilder
-    private var connectionFeedback: some View {
+    private var toolbar: some View {
+        ZStack {
+            VStack(spacing: 1) {
+                Text("Настройки")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(AppTheme.text)
+
+                Text("OpenAI-совместимый API")
+                    .font(.system(size: 10))
+                    .foregroundStyle(AppTheme.textFaint)
+            }
+
+            HStack {
+                Button {
+                    model.discardDraftChanges()
+                    close()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 14, weight: .medium))
+                        .frame(width: 30, height: 30)
+                }
+                .buttonStyle(QuietIconButtonStyle())
+                .help("Вернуться к тексту")
+                .accessibilityLabel("Вернуться к тексту")
+
+                Spacer()
+            }
+            .padding(.horizontal, 10)
+        }
+        .frame(height: 46)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(AppTheme.text.opacity(0.08))
+                .frame(height: 1)
+        }
+    }
+
+    private func fieldGroup<Content: View>(
+        title: String,
+        hint: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(AppTheme.textSoft)
+                .padding(.bottom, 5)
+
+            content()
+
+            Text(hint)
+                .font(.system(size: 10))
+                .foregroundStyle(AppTheme.textFaint)
+                .padding(.top, 4)
+        }
+        .padding(.bottom, 12)
+    }
+
+    private func styledTextField<Field: View>(_ field: Field) -> some View {
+        field
+            .textFieldStyle(.plain)
+            .font(.system(size: 12))
+            .foregroundStyle(AppTheme.text)
+            .padding(.horizontal, 9)
+            .frame(height: 34)
+            .background(AppTheme.raised, in: RoundedRectangle(cornerRadius: 8))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(AppTheme.line, lineWidth: 1)
+            }
+    }
+
+    private var loginItemRow: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 18) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Запускать при входе")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(AppTheme.text)
+
+                    Text(loginItemDescription)
+                        .font(.system(size: 10))
+                        .foregroundStyle(AppTheme.textFaint)
+                }
+
+                Spacer()
+
+                Toggle(
+                    "Запускать при входе",
+                    isOn: Binding(
+                        get: { model.loginItemIsEnabled },
+                        set: { model.setLoginItemEnabled($0) }
+                    )
+                )
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .tint(AppTheme.accent)
+                .disabled(model.loginItemStatus == .unavailable)
+            }
+            .frame(minHeight: 42)
+
+            if model.loginItemRequiresApproval {
+                Button("Подтвердить в системных настройках") {
+                    model.openLoginItemSettings()
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(AppTheme.accent)
+                .padding(.bottom, 6)
+            }
+        }
+        .padding(.vertical, 2)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(AppTheme.text.opacity(0.08))
+                .frame(height: 1)
+        }
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(AppTheme.text.opacity(0.08))
+                .frame(height: 1)
+        }
+        .padding(.bottom, 13)
+    }
+
+    private var connectionPanel: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(connectionTitle)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(connectionTitleColor)
+
+                Text("Проверка отправит короткий тестовый запрос.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(AppTheme.textSoft)
+            }
+
+            Spacer()
+
+            Button(model.connectionState == .checking ? "Проверяю…" : "Проверить") {
+                model.checkConnection()
+            }
+            .buttonStyle(SettingsSecondaryButtonStyle())
+            .disabled(!model.canCheckConnection)
+        }
+        .padding(.horizontal, 10)
+        .frame(minHeight: 48)
+        .background(AppTheme.surface, in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private var footer: some View {
+        HStack(spacing: 8) {
+            Spacer()
+
+            Button("Отмена") {
+                model.discardDraftChanges()
+                close()
+            }
+            .buttonStyle(SettingsSecondaryButtonStyle())
+
+            Button("Сохранить") {
+                model.save()
+                if model.saveState == .success {
+                    close()
+                }
+            }
+            .buttonStyle(SettingsSaveButtonStyle())
+            .keyboardShortcut(.return, modifiers: .command)
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 48)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(AppTheme.text.opacity(0.08))
+                .frame(height: 1)
+        }
+    }
+
+    private var connectionTitle: String {
         switch model.connectionState {
         case .idle:
-            if model.saveState == .success {
-                feedbackLabel("Настройки сохранены.", systemImage: "checkmark.circle", color: .green)
-            } else if case let .failure(message) = model.saveState {
-                feedbackLabel(message, systemImage: "exclamationmark.triangle", color: .red)
-            }
+            "Соединение не проверено"
         case .checking:
-            HStack(spacing: 8) {
-                ProgressView()
-                    .controlSize(.small)
-                Text("Проверяем соединение…")
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .accessibilityElement(children: .combine)
+            "Проверяю соединение…"
         case .success:
-            feedbackLabel(
-                "Соединение работает. Нажми «Сохранить», чтобы применить настройки.",
-                systemImage: "checkmark.circle",
-                color: .green
-            )
-        case let .failure(message):
-            feedbackLabel(message, systemImage: "exclamationmark.triangle", color: .red)
+            "Соединение работает"
+        case .failure:
+            "Соединение не установлено"
         }
     }
 
-    @ViewBuilder
-    private var loginItemStatus: some View {
+    private var connectionTitleColor: Color {
+        switch model.connectionState {
+        case .success:
+            AppTheme.accent
+        case .failure:
+            AppTheme.danger
+        case .idle, .checking:
+            AppTheme.text
+        }
+    }
+
+    private var loginItemDescription: String {
         switch model.loginItemStatus {
         case .disabled:
-            feedbackLabel("Автозапуск выключен.", systemImage: "minus.circle", color: .secondary)
+            "Автозапуск выключен"
         case .enabled:
-            feedbackLabel("Автозапуск включён.", systemImage: "checkmark.circle", color: .green)
+            "Значок появится в строке меню"
         case .requiresApproval:
-            feedbackLabel(
-                "macOS ожидает подтверждения автозапуска.",
-                systemImage: "exclamationmark.circle",
-                color: .orange
-            )
+            "macOS ожидает подтверждения"
         case .unavailable:
-            feedbackLabel(
-                "Автозапуск доступен после установки приложения в «Программы».",
-                systemImage: "info.circle",
-                color: .secondary
-            )
+            "Доступно после установки в «Программы»"
         }
     }
 
-    private func feedbackLabel(
-        _ text: String,
-        systemImage: String,
-        color: Color
-    ) -> some View {
-        Label(text, systemImage: systemImage)
-            .font(.caption)
-            .foregroundStyle(color)
-            .accessibilityElement(children: .combine)
+    private var settingsFeedback: (text: String, color: Color)? {
+        if let message = model.loadMessage {
+            return (message, AppTheme.danger)
+        }
+        if let message = model.loginItemMessage {
+            return (message, AppTheme.danger)
+        }
+        if case let .failure(message) = model.connectionState {
+            return (message, AppTheme.danger)
+        }
+        if case let .failure(message) = model.saveState {
+            return (message, AppTheme.danger)
+        }
+        if model.saveState == .success {
+            return ("Настройки сохранены.", AppTheme.accent)
+        }
+        return nil
+    }
+}
+
+private struct SettingsSecondaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(AppTheme.text)
+            .padding(.horizontal, 10)
+            .frame(height: 30)
+            .background(
+                configuration.isPressed ? AppTheme.surface : AppTheme.raised,
+                in: RoundedRectangle(cornerRadius: 7)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 7)
+                    .stroke(AppTheme.lineStrong, lineWidth: 1)
+            }
+    }
+}
+
+private struct SettingsSaveButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 14)
+            .frame(minWidth: 92, minHeight: 32)
+            .background(
+                configuration.isPressed ? AppTheme.accentHover : AppTheme.accent,
+                in: RoundedRectangle(cornerRadius: 7)
+            )
+            .offset(y: configuration.isPressed ? 1 : 0)
     }
 }

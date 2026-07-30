@@ -1,0 +1,164 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-30T15:30:43Z",
+  "title": "Design System: Русификатор",
+  "extensions": {
+    "colorMeta": {
+      "window": {
+        "role": "neutral",
+        "displayName": "Тёплый лист",
+        "canonical": "#FCFCFB",
+        "tonalRamp": ["#2C2C21", "#494937", "#66664C", "#838362", "#9D9D7C", "#B3B399", "#D3D3C5", "#F4F4F0"]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Рабочая поверхность",
+        "canonical": "#F4F5F3",
+        "tonalRamp": ["#262A23", "#40463A", "#596151", "#737D68", "#8C9782", "#A6AE9E", "#CCD1C7", "#F2F3F1"]
+      },
+      "raised": {
+        "role": "neutral",
+        "displayName": "Приподнятый белый",
+        "canonical": "#FFFFFF",
+        "tonalRamp": ["#262626", "#404040", "#595959", "#737373", "#8C8C8C", "#A6A6A6", "#CCCCCC", "#F2F2F2"]
+      },
+      "text": {
+        "role": "neutral",
+        "displayName": "Графитовый текст",
+        "canonical": "#1D211F",
+        "tonalRamp": ["#242926", "#3C4440", "#535F59", "#6B7A73", "#85948C", "#A0ACA6", "#C9CFCC", "#F1F3F2"]
+      },
+      "text-soft": {
+        "role": "neutral",
+        "displayName": "Мягкий графит",
+        "canonical": "#626864",
+        "tonalRamp": ["#252726", "#3E423F", "#575C58", "#6F7672", "#89908B", "#A3A8A5", "#CACECB", "#F2F3F2"]
+      },
+      "text-faint": {
+        "role": "neutral",
+        "displayName": "Вторичный графит",
+        "canonical": "#6B716D",
+        "tonalRamp": ["#252726", "#3E413F", "#575C58", "#707672", "#898F8B", "#A3A8A5", "#CBCDCC", "#F2F3F2"]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Тонкая линия",
+        "canonical": "#D9DDD9",
+        "tonalRamp": ["#242824", "#3C433C", "#545E54", "#6C796C", "#869386", "#A1ABA1", "#C9CFC9", "#F2F3F2"]
+      },
+      "line-strong": {
+        "role": "neutral",
+        "displayName": "Выраженная линия",
+        "canonical": "#C6CBC7",
+        "tonalRamp": ["#242825", "#3D433E", "#555D57", "#6D7870", "#879289", "#A2AAA3", "#CACECB", "#F2F3F2"]
+      },
+      "accent": {
+        "role": "primary",
+        "displayName": "Спокойный зелёный",
+        "canonical": "#28715A",
+        "tonalRamp": ["#14392D", "#215E4B", "#2F8469", "#3CAA87", "#56C3A1", "#7BD0B6", "#B4E4D5", "#ECF8F4"]
+      },
+      "accent-hover": {
+        "role": "primary",
+        "displayName": "Глубокий зелёный",
+        "canonical": "#215F4C",
+        "tonalRamp": ["#14392D", "#215F4C", "#2E846A", "#3BAA88", "#55C4A2", "#7BD1B6", "#B3E5D6", "#ECF8F5"]
+      },
+      "accent-soft": {
+        "role": "primary",
+        "displayName": "Мягкий зелёный",
+        "canonical": "#E3F0EA",
+        "tonalRamp": ["#1B3227", "#2C5341", "#3E745B", "#509575", "#6AAF8F", "#8BC1A8", "#BDDBCD", "#EEF6F3"]
+      },
+      "danger": {
+        "role": "tertiary",
+        "displayName": "Приглушённая ошибка",
+        "canonical": "#A93F38",
+        "tonalRamp": ["#391513", "#602420", "#86322C", "#AC4039", "#C65A53", "#D37E79", "#E6B6B2", "#F9EDEC"]
+      },
+      "danger-soft": {
+        "role": "tertiary",
+        "displayName": "Фон ошибки",
+        "canonical": "#F8E9E7",
+        "tonalRamp": ["#3B1611", "#63251D", "#8A3428", "#B24334", "#CB5C4D", "#D78075", "#E8B7B0", "#F9EDEB"]
+      }
+    },
+    "typographyMeta": {
+      "title": {"displayName": "Заголовок", "purpose": "Название окна и главное действие."},
+      "body": {"displayName": "Основной текст", "purpose": "Редактор, результат и поля."},
+      "label": {"displayName": "Метка", "purpose": "Названия секций и компактные действия."},
+      "helper": {"displayName": "Подсказка", "purpose": "Состояния и пояснения."}
+    },
+    "shadows": [],
+    "motion": [],
+    "breakpoints": []
+  },
+  "components": [
+    {
+      "name": "Главная кнопка",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Единственное главное действие на рабочем экране.",
+      "html": "<button class=\"ds-btn-primary\">Очистить текст</button>",
+      "css": ".ds-btn-primary { width: 100%; height: 38px; border: 0; border-radius: 8px; background: #28715A; color: #FFFFFF; font: 600 13px -apple-system, BlinkMacSystemFont, sans-serif; } .ds-btn-primary:hover { background: #215F4C; } .ds-btn-primary:focus-visible { outline: 2px solid #28715A; outline-offset: 2px; }"
+    },
+    {
+      "name": "Поле настроек",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Компактное поле для адреса API, ключа и модели.",
+      "html": "<input class=\"ds-input\" value=\"proxy/gpt-5.6-terra\" aria-label=\"Модель\">",
+      "css": ".ds-input { width: 260px; height: 34px; padding: 0 9px; border: 1px solid #D9DDD9; border-radius: 8px; background: #FFFFFF; color: #1D211F; font: 400 13px -apple-system, BlinkMacSystemFont, sans-serif; } .ds-input:hover { border-color: #C6CBC7; } .ds-input:focus-visible { outline: 2px solid #28715A; outline-offset: 1px; }"
+    },
+    {
+      "name": "Рабочая поверхность",
+      "kind": "card",
+      "refersTo": "result-surface",
+      "description": "Единая поверхность для пустого состояния, загрузки, ошибки и результата.",
+      "html": "<section class=\"ds-result\">Здесь появится очищенный текст.</section>",
+      "css": ".ds-result { min-height: 146px; padding: 12px; border: 1px solid #D9DDD9; border-radius: 8px; background: #F4F5F3; color: #6B716D; font: 400 13px -apple-system, BlinkMacSystemFont, sans-serif; }"
+    },
+    {
+      "name": "Панель инструмента",
+      "kind": "nav",
+      "description": "Компактная шапка с названием по центру и действиями по краям.",
+      "html": "<nav class=\"ds-toolbar\"><button aria-label=\"Очистить\">⌫</button><strong>Русификатор</strong><button aria-label=\"Настройки\">⚙</button></nav>",
+      "css": ".ds-toolbar { display: grid; grid-template-columns: 30px 1fr 30px; align-items: center; height: 46px; color: #1D211F; font: 600 13px -apple-system, BlinkMacSystemFont, sans-serif; } .ds-toolbar strong { text-align: center; } .ds-toolbar button { width: 30px; height: 30px; border: 0; border-radius: 7px; background: transparent; color: #626864; } .ds-toolbar button:hover { background: #F4F5F3; } .ds-toolbar button:focus-visible { outline: 2px solid #28715A; }"
+    },
+    {
+      "name": "Панель состояния",
+      "kind": "custom",
+      "description": "Короткая строка состояния между действием и результатом.",
+      "html": "<div class=\"ds-status\"><span class=\"ds-status-dot\"></span>Готово к обработке</div>",
+      "css": ".ds-status { display: flex; align-items: center; gap: 6px; min-height: 22px; color: #6B716D; font: 400 10px -apple-system, BlinkMacSystemFont, sans-serif; } .ds-status-dot { width: 6px; height: 6px; border-radius: 50%; background: #28715A; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Один чистый лист",
+    "overview": "Интерфейс выглядит как компактный нативный инструмент macOS: спокойный, собранный и полностью сосредоточенный на одном преобразовании текста. Светлые поверхности, мягкие границы и единственный зелёный акцент создают рабочую и ненавязчивую среду.\n\nПлотность умеренная: главное действие всегда заметно, но не подавляет редактор и результат. Состояние приложения объясняется короткой строкой, а вторичные действия остаются в панели инструментов и контекстном меню.",
+    "keyCharacteristics": [
+      "фиксированное компактное окно;",
+      "один выразительный акцент;",
+      "нативная системная типографика;",
+      "плоские поверхности с тональными различиями;",
+      "короткие и ясные подписи."
+    ],
+    "rules": [
+      {"name": "The One Accent Rule", "body": "Зелёный цвет обозначает главное действие и активное состояние; декоративно он не используется.", "section": "colors"},
+      {"name": "The Native Type Rule", "body": "Используется системная гарнитура macOS; отдельный декоративный шрифт не вводится.", "section": "typography"},
+      {"name": "The Tonal Depth Rule", "body": "Сначала разделяй уровни оттенком и границей; не добавляй тень без отдельной интерактивной причины.", "section": "elevation"}
+    ],
+    "dos": [
+      "Do сохраняй один главный зелёный призыв к действию на экране.",
+      "Do используй системные шрифты и символы macOS.",
+      "Do объясняй текущее состояние короткой строкой рядом с рабочей областью.",
+      "Do сохраняй фиксированную компактную геометрию всплывающего окна."
+    ],
+    "donts": [
+      "Don't добавляй декоративные градиенты, крупные иллюстрации или постоянные тени.",
+      "Don't конкурируй с основной кнопкой другими яркими цветными действиями.",
+      "Don't переноси историю предыдущих обработок в новый прогон.",
+      "Don't перегружай контекстное меню: в нём остаются название и версия, настройки и выход."
+    ]
+  }
+}

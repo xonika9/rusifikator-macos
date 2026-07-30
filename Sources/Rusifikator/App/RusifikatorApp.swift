@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 enum FixedSystemPrompt {
@@ -25,20 +24,18 @@ enum FixedSystemPrompt {
 
 @main
 struct RusifikatorApp: App {
-    @State private var editor = EditorViewModel()
-    @State private var settings = SettingsViewModel()
+    @NSApplicationDelegateAdaptor(AppDelegate.self)
+    private var appDelegate
 
     var body: some Scene {
-        MenuBarExtra("Русификатор", systemImage: "character.cursor.ibeam") {
-            EditorView(editor: editor, settings: settings)
-        }
-        .menuBarExtraStyle(.window)
-
         Settings {
-            SettingsView(model: settings)
+            EmptyView()
         }
         .commands {
-            AppCommands()
+            AppCommands(
+                openSettings: appDelegate.openSettings,
+                quit: appDelegate.quit
+            )
         }
     }
 }

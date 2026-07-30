@@ -1,105 +1,137 @@
-import AppKit
 import SwiftUI
 
 struct EditorView: View {
     @Bindable var editor: EditorViewModel
     let settings: SettingsViewModel
+    let openSettings: () -> Void
 
     @FocusState private var sourceIsFocused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            header
-            sourceEditor
+        VStack(spacing: 0) {
+            toolbar
 
-            if editor.state == .error, let message = editor.errorMessage {
-                errorPanel(message)
-            } else if editor.state == .cancelled {
-                Label("Обработка отменена. Исходный текст сохранён.", systemImage: "info.circle")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel("Обработка отменена. Исходный текст сохранён.")
+            VStack(alignment: .leading, spacing: 0) {
+                sourceHeader
+                sourceEditor
+                primaryAction
+                stateLine
+                resultSection
+                privacyNote
             }
-
-            primaryAction
-
-            if let result = editor.result, editor.state == .success {
-                resultPanel(result)
-            }
-
-            footer
+            .padding(.top, 14)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 16)
         }
-        .padding(16)
         .frame(width: 420, height: 560)
+        .background(AppTheme.window)
         .task {
             sourceIsFocused = true
         }
     }
 
-    private var header: some View {
-        HStack(spacing: 8) {
-            Text("Русификатор")
-                .font(.headline)
+    private var toolbar: some View {
+        ZStack {
+            VStack(spacing: 1) {
+                Text("Русификатор")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(AppTheme.text)
 
-            Spacer()
-
-            Button {
-                editor.clear()
-                sourceIsFocused = true
-            } label: {
-                Label("Очистить", systemImage: "trash")
-                    .labelStyle(.iconOnly)
+                Text("готовит текст к отправке")
+                    .font(.system(size: 10))
+                    .foregroundStyle(AppTheme.textFaint)
             }
-            .buttonStyle(.borderless)
-            .disabled(!editor.canClear)
-            .help("Очистить исходный текст и результат")
-            .accessibilityLabel("Очистить")
 
-            SettingsLink {
-                Label("Настройки", systemImage: "gearshape")
-                    .labelStyle(.iconOnly)
+            HStack {
+                Button {
+                    editor.clear()
+                    sourceIsFocused = true
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 14, weight: .regular))
+                        .frame(width: 30, height: 30)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(QuietIconButtonStyle())
+                .disabled(!editor.canClear)
+                .help("Очистить исходный и готовый текст")
+                .accessibilityLabel("Очистить")
+
+                Spacer()
+
+                Button(action: openSettings) {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 15, weight: .regular))
+                        .frame(width: 30, height: 30)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(QuietIconButtonStyle())
+                .keyboardShortcut(",", modifiers: .command)
+                .help("Настройки (⌘,)")
+                .accessibilityLabel("Открыть настройки")
             }
-            .buttonStyle(.borderless)
-            .keyboardShortcut(",", modifiers: .command)
-            .help("Открыть настройки")
-            .accessibilityLabel("Настройки")
+            .padding(.horizontal, 10)
+        }
+        .frame(height: 46)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(AppTheme.text.opacity(0.08))
+                .frame(height: 1)
         }
     }
 
-    private var sourceEditor: some View {
-        VStack(alignment: .leading, spacing: 6) {
+    private var sourceHeader: some View {
+        HStack {
             Text("Расшифровка")
-                .font(.caption)
-                .fontWeight(.semibold)
-                .foregroundStyle(.secondary)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(AppTheme.textSoft)
+
+            Spacer()
+
+            Text(characterCount)
+                .font(.system(size: 10))
+                .monospacedDigit()
+                .foregroundStyle(AppTheme.textFaint)
+        }
+        .frame(height: 24)
+        .padding(.bottom, 5)
+    }
+
+    private var sourceEditor: some View {
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(editor.isSourceEditable ? AppTheme.raised : AppTheme.surface)
 
             TextEditor(text: $editor.source)
-                .font(.body)
+                .font(.system(size: 13))
+                .foregroundStyle(
+                    editor.isSourceEditable ? AppTheme.text : AppTheme.textSoft
+                )
                 .scrollContentBackground(.hidden)
-                .padding(6)
-                .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(.separator, lineWidth: 1)
-                }
-                .overlay(alignment: .topLeading) {
-                    if editor.source.isEmpty {
-                        Text("Вставь сюда голосовую расшифровку…")
-                            .foregroundStyle(.tertiary)
-                            .padding(.horizontal, 11)
-                            .padding(.vertical, 14)
-                            .allowsHitTesting(false)
-                    }
-                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 5)
                 .focused($sourceIsFocused)
                 .disabled(!editor.isSourceEditable)
-                .frame(
-                    minHeight: editor.result == nil ? 210 : 120,
-                    maxHeight: editor.result == nil ? .infinity : 180
-                )
-                .accessibilityLabel("Исходная расшифровка")
-                .accessibilityHint("Вставь текст, который нужно очистить")
+
+            if editor.source.isEmpty {
+                Text("Вставь сюда надиктованный текст…")
+                    .font(.system(size: 13))
+                    .foregroundStyle(AppTheme.textFaint)
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 10)
+                    .allowsHitTesting(false)
+            }
         }
+        .frame(height: 132)
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(
+                    sourceIsFocused ? AppTheme.accent : AppTheme.line,
+                    lineWidth: sourceIsFocused ? 1.5 : 1
+                )
+        }
+        .accessibilityLabel("Исходная расшифровка")
+        .accessibilityHint("Вставь текст, который нужно очистить")
     }
 
     private var primaryAction: some View {
@@ -111,109 +143,329 @@ struct EditorView: View {
                 settings.submit(editor)
             }
         } label: {
-            HStack(spacing: 8) {
-                if editor.state == .loading {
-                    ProgressView()
-                        .controlSize(.small)
+            ZStack {
+                Text(primaryActionTitle)
+                    .font(.system(size: 13, weight: .semibold))
+
+                if editor.state != .loading {
+                    HStack {
+                        Spacer()
+                        Text("⌘ ↩")
+                            .font(.system(size: 10, weight: .medium))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(
+                                RoundedRectangle(cornerRadius: 5)
+                                    .stroke(shortcutColor.opacity(0.35), lineWidth: 1)
+                            )
+                            .foregroundStyle(shortcutColor)
+                    }
+                    .padding(.horizontal, 10)
                 }
-                Text(editor.state == .loading ? "Отменить" : "Очистить текст")
-                    .frame(maxWidth: .infinity)
             }
+            .frame(maxWidth: .infinity)
+            .frame(height: 38)
         }
-        .buttonStyle(.borderedProminent)
-        .controlSize(.large)
-        .disabled(editor.state == .loading ? false : !editor.canSubmit)
+        .buttonStyle(
+            PrototypePrimaryButtonStyle(
+                state: editor.state,
+                enabled: editor.canSubmit || editor.canCancel
+            )
+        )
+        .disabled(!editor.canSubmit && !editor.canCancel)
         .keyboardShortcut(.return, modifiers: .command)
+        .padding(.top, 10)
         .accessibilityHint(
-            editor.state == .loading
+            editor.canCancel
                 ? "Отменяет текущий запрос и сохраняет исходный текст"
                 : "Отправляет текущую расшифровку на обработку"
         )
     }
 
-    private func errorPanel(_ message: String) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "exclamationmark.triangle")
-                .foregroundStyle(.red)
-                .accessibilityHidden(true)
+    @ViewBuilder
+    private var stateLine: some View {
+        HStack(spacing: 6) {
+            switch editor.state {
+            case .loading:
+                Circle()
+                    .fill(AppTheme.accent)
+                    .frame(width: 6, height: 6)
+                Text("Обрабатываю, обычно это занимает несколько секунд…")
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text(message)
-                    .font(.caption)
+            case .success:
+                Text("Готово. Исходный текст не сохранён.")
+                    .foregroundStyle(AppTheme.accent)
 
-                HStack {
-                    Button("Повторить") {
-                        settings.submit(editor)
-                    }
-                    .disabled(!editor.canSubmit)
+            case .error:
+                Text("Запрос не выполнен, исходный текст остался на месте.")
+                    .foregroundStyle(AppTheme.danger)
 
-                    SettingsLink {
-                        Text("Открыть настройки")
-                    }
-                }
-                .controlSize(.small)
+            case .cancelled:
+                Text("Запрос отменён.")
+
+            case .empty, .ready:
+                EmptyView()
             }
         }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+        .font(.system(size: 10))
+        .foregroundStyle(AppTheme.textFaint)
+        .frame(height: 22, alignment: .topLeading)
+        .padding(.top, 6)
         .accessibilityElement(children: .combine)
     }
 
-    private func resultPanel(_ result: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Label("Готовый текст", systemImage: "checkmark.circle.fill")
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.green)
+    private var resultSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            resultHeader
+                .padding(.bottom, 5)
 
-                Spacer()
+            resultSurface
+        }
+        .padding(.top, 3)
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    private var resultHeader: some View {
+        HStack {
+            Text("Готовый текст")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(AppTheme.textSoft)
+
+            Spacer()
+
+            if editor.state == .success {
+                if editor.copiedConfirmationVisible {
+                    Text("Скопировано")
+                        .font(.system(size: 10))
+                        .foregroundStyle(AppTheme.accent)
+                }
 
                 Button {
                     editor.copyResult()
                 } label: {
-                    Label(
-                        editor.copiedConfirmationVisible ? "Скопировано" : "Скопировать",
-                        systemImage: editor.copiedConfirmationVisible ? "checkmark" : "doc.on.doc"
-                    )
+                    Label("Скопировать", systemImage: "doc.on.doc")
+                        .font(.system(size: 11, weight: .semibold))
                 }
-                .controlSize(.small)
+                .buttonStyle(PrototypeTextButtonStyle())
                 .disabled(!editor.canCopy)
                 .accessibilityHint("Копирует готовый текст в системный буфер")
             }
-
-            ScrollView {
-                Text(result)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                    .textSelection(.enabled)
-                    .padding(10)
-            }
-            .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
-            .overlay {
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(.separator, lineWidth: 1)
-            }
-            .frame(maxHeight: .infinity)
-            .accessibilityLabel("Готовый текст")
         }
-        .frame(minHeight: 120, maxHeight: .infinity)
+        .frame(height: 24)
     }
 
-    private var footer: some View {
-        HStack {
-            Text("⌘↩ — обработать")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+    @ViewBuilder
+    private var resultSurface: some View {
+        Group {
+            switch editor.state {
+            case .loading:
+                loadingResult
+
+            case .error:
+                errorResult
+
+            case .success:
+                successResult
+
+            case .empty, .ready, .cancelled:
+                emptyResult
+            }
+        }
+        .frame(height: 146)
+    }
+
+    private var emptyResult: some View {
+        Text("Здесь появится очищенный текст. Без пояснений и ответа на его содержание.")
+            .font(.system(size: 11))
+            .multilineTextAlignment(.center)
+            .foregroundStyle(AppTheme.textFaint)
+            .padding(24)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(AppTheme.surface, in: RoundedRectangle(cornerRadius: 8))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(
+                        AppTheme.line,
+                        style: StrokeStyle(lineWidth: 1, dash: [4, 4])
+                    )
+            }
+    }
+
+    private var loadingResult: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            skeletonLine(width: 1)
+            skeletonLine(width: 0.88)
+            skeletonLine(width: 0.93)
+            skeletonLine(width: 0.68)
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 15)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(AppTheme.surface, in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(AppTheme.line, style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+        }
+        .accessibilityLabel("Текст обрабатывается")
+    }
+
+    private func skeletonLine(width: CGFloat) -> some View {
+        GeometryReader { geometry in
+            RoundedRectangle(cornerRadius: 4)
+                .fill(AppTheme.line)
+                .frame(width: geometry.size.width * width, height: 10)
+        }
+        .frame(height: 10)
+    }
+
+    private var errorResult: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("Не удалось обработать текст")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(AppTheme.danger)
+
+            Text(editor.errorMessage ?? "Проверь настройки и попробуй ещё раз.")
+                .font(.system(size: 11))
+                .foregroundStyle(Color(red: 0.435, green: 0.290, blue: 0.278))
+                .lineLimit(3)
+
+            Button("Открыть настройки", action: openSettings)
+                .buttonStyle(PrototypeErrorLinkStyle())
 
             Spacer()
-
-            Button("Выйти") {
-                NSApplication.shared.terminate(nil)
-            }
-            .buttonStyle(.borderless)
-            .keyboardShortcut("q", modifiers: .command)
-            .help("Завершить Русификатор")
         }
+        .padding(13)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(AppTheme.dangerSoft, in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(AppTheme.danger.opacity(0.16), lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var successResult: some View {
+        ScrollView {
+            Text(editor.result ?? "")
+                .font(.system(size: 13))
+                .foregroundStyle(AppTheme.text)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .padding(10)
+        }
+        .background(AppTheme.surface, in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(AppTheme.line, lineWidth: 1)
+        }
+        .accessibilityLabel("Готовый текст")
+    }
+
+    private var privacyNote: some View {
+        Label("История текстов не сохраняется", systemImage: "lock.fill")
+            .font(.system(size: 10))
+            .foregroundStyle(AppTheme.textFaint)
+            .frame(height: 29, alignment: .bottomLeading)
+    }
+
+    private var characterCount: String {
+        "\(editor.source.count) \(Self.characterWord(for: editor.source.count))"
+    }
+
+    private static func characterWord(for count: Int) -> String {
+        let lastTwo = count % 100
+        let last = count % 10
+        if (11...14).contains(lastTwo) {
+            return "знаков"
+        }
+        switch last {
+        case 1:
+            return "знак"
+        case 2...4:
+            return "знака"
+        default:
+            return "знаков"
+        }
+    }
+
+    private var primaryActionTitle: String {
+        switch editor.state {
+        case .loading:
+            "Отменить"
+        case .success:
+            "Очистить ещё раз"
+        case .error:
+            "Повторить"
+        case .empty, .ready, .cancelled:
+            "Очистить текст"
+        }
+    }
+
+    private var shortcutColor: Color {
+        editor.canSubmit ? .white.opacity(0.74) : AppTheme.textFaint
+    }
+}
+
+private struct PrototypePrimaryButtonStyle: ButtonStyle {
+    let state: EditorState
+    let enabled: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(foreground)
+            .background(background(configuration.isPressed), in: RoundedRectangle(cornerRadius: 8))
+            .offset(y: configuration.isPressed && enabled ? 1 : 0)
+    }
+
+    private var foreground: Color {
+        if state == .loading {
+            return AppTheme.text
+        }
+        return enabled ? .white : AppTheme.textFaint
+    }
+
+    private func background(_ pressed: Bool) -> Color {
+        if state == .loading {
+            return AppTheme.surface
+        }
+        guard enabled else {
+            return Color(red: 0.812, green: 0.827, blue: 0.816)
+        }
+        return pressed ? AppTheme.accentHover : AppTheme.accent
+    }
+}
+
+private struct PrototypeTextButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(AppTheme.accent)
+            .padding(.horizontal, 7)
+            .frame(height: 26)
+            .background(
+                configuration.isPressed ? AppTheme.accentSoft : .clear,
+                in: RoundedRectangle(cornerRadius: 6)
+            )
+    }
+}
+
+private struct PrototypeErrorLinkStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(AppTheme.danger)
+            .underline()
+            .opacity(configuration.isPressed ? 0.65 : 1)
+    }
+}
+
+struct QuietIconButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(configuration.isPressed ? AppTheme.text : AppTheme.textSoft)
+            .background(
+                configuration.isPressed ? AppTheme.surface : .clear,
+                in: RoundedRectangle(cornerRadius: 7)
+            )
     }
 }
