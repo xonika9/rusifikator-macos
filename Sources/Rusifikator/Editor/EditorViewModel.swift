@@ -27,7 +27,8 @@ struct OpenAIEditorAPIClient: EditorAPIClient {
             baseURL: request.baseURL,
             model: request.model,
             apiKey: request.apiKey,
-            systemPrompt: request.systemPrompt
+            systemPrompt: request.systemPrompt,
+            requestID: request.id
         )
     }
 }
@@ -53,6 +54,9 @@ final class EditorViewModel {
     private let clipboard: any ClipboardService
 
     @ObservationIgnored
+    private let history: (any HistoryRecording)?
+
+    @ObservationIgnored
     private var requestTask: Task<Void, Never>?
 
     @ObservationIgnored
@@ -66,10 +70,12 @@ final class EditorViewModel {
 
     init(
         apiClient: any EditorAPIClient = OpenAIEditorAPIClient(),
-        clipboard: any ClipboardService = SystemClipboardService()
+        clipboard: any ClipboardService = SystemClipboardService(),
+        history: (any HistoryRecording)? = nil
     ) {
         self.apiClient = apiClient
         self.clipboard = clipboard
+        self.history = history
     }
 
     var canSubmit: Bool {
@@ -210,6 +216,7 @@ final class EditorViewModel {
             self.result = result
             errorMessage = nil
             state = .success
+            history?.record(source: request.source, result: result)
 
         case let .failure(error):
             result = nil
@@ -237,9 +244,8 @@ final class EditorViewModel {
     }
 
     private static func userMessage(for error: any Error) -> String {
-        if let error = error as? any LocalizedError,
-           let description = error.errorDescription {
-            return description
+        if let error = error as? APIError {
+            return error.localizedDescription
         }
         return "Не удалось обработать текст. Попробуй ещё раз."
     }

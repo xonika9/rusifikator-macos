@@ -2,6 +2,8 @@ import Foundation
 
 struct OpenAICompatibleClient: Sendable {
     static let maximumResponseBytes = 4 * 1_024 * 1_024
+    static let processingTimeout: TimeInterval = 90
+    static let connectionCheckTimeout: TimeInterval = 30
 
     private let protocolClasses: [AnyClass]?
 
@@ -14,7 +16,28 @@ struct OpenAICompatibleClient: Sendable {
         baseURL: URL,
         model: String,
         apiKey: String,
-        systemPrompt: String = FixedSystemPrompt.text
+        systemPrompt: String = FixedSystemPrompt.text,
+        requestID: UUID = UUID()
+    ) async throws -> String {
+        try await clean(
+            text: text,
+            baseURL: baseURL,
+            model: model,
+            apiKey: apiKey,
+            systemPrompt: systemPrompt,
+            requestID: requestID,
+            timeoutInterval: Self.processingTimeout
+        )
+    }
+
+    private func clean(
+        text: String,
+        baseURL: URL,
+        model: String,
+        apiKey: String,
+        systemPrompt: String,
+        requestID: UUID,
+        timeoutInterval: TimeInterval
     ) async throws -> String {
         let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else {
@@ -35,6 +58,7 @@ struct OpenAICompatibleClient: Sendable {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        request.setValue(requestID.uuidString, forHTTPHeaderField: "X-Request-ID")
         request.httpBody = try JSONEncoder().encode(payload)
         request.cachePolicy = .reloadIgnoringLocalCacheData
 
@@ -44,9 +68,12 @@ struct OpenAICompatibleClient: Sendable {
         } catch {
             throw APIError.invalidURL
         }
+        let requestCode = Self.requestCode(for: requestID)
         let transfer = StreamingRequest(
             maximumBytes: Self.maximumResponseBytes,
-            allowedOrigin: allowedOrigin
+            allowedOrigin: allowedOrigin,
+            requestCode: requestCode,
+            timeoutSeconds: Int(timeoutInterval)
         )
 
         let data: Data
@@ -54,6 +81,7 @@ struct OpenAICompatibleClient: Sendable {
             data = try await transfer.load(
                 request,
                 configuration: Self.makeConfiguration(
+                    timeoutInterval: timeoutInterval,
                     protocolClasses: protocolClasses
                 )
             )
@@ -66,11 +94,14 @@ struct OpenAICompatibleClient: Sendable {
                 throw APIError.cancelled
             }
             if error.code == .timedOut {
-                throw APIError.timeout
+                throw APIError.clientTimeout(
+                    seconds: Int(timeoutInterval),
+                    requestCode: requestCode
+                )
             }
-            throw APIError.transport
+            throw APIError.transport(requestCode: requestCode)
         } catch {
-            throw APIError.transport
+            throw APIError.transport(requestCode: requestCode)
         }
 
         let response: ChatCompletionResponse
@@ -105,8 +136,14 @@ struct OpenAICompatibleClient: Sendable {
             baseURL: baseURL,
             model: model,
             apiKey: apiKey,
-            systemPrompt: systemPrompt
+            systemPrompt: systemPrompt,
+            requestID: UUID(),
+            timeoutInterval: Self.connectionCheckTimeout
         )
+    }
+
+    static func requestCode(for requestID: UUID) -> String {
+        String(requestID.uuidString.prefix(8))
     }
 
     static func endpoint(for baseURL: URL) throws -> URL {
@@ -147,13 +184,14 @@ struct OpenAICompatibleClient: Sendable {
     }
 
     static func makeConfiguration(
+        timeoutInterval: TimeInterval = processingTimeout,
         protocolClasses: [AnyClass]? = nil
     ) -> URLSessionConfiguration {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.urlCache = nil
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-        configuration.timeoutIntervalForRequest = 60
-        configuration.timeoutIntervalForResource = 90
+        configuration.timeoutIntervalForRequest = timeoutInterval
+        configuration.timeoutIntervalForResource = timeoutInterval
         configuration.waitsForConnectivity = false
         configuration.httpShouldSetCookies = false
         if let protocolClasses {
@@ -188,6 +226,8 @@ struct OpenAICompatibleClient: Sendable {
 private final class StreamingRequest: NSObject, @unchecked Sendable {
     private let maximumBytes: Int
     private let allowedOrigin: ProviderOrigin
+    private let requestCode: String
+    private let timeoutSeconds: Int
     private let lock = NSLock()
 
     private var continuation: CheckedContinuation<Data, Error>?
@@ -197,9 +237,16 @@ private final class StreamingRequest: NSObject, @unchecked Sendable {
     private var isFinished = false
     private var cancellationRequested = false
 
-    init(maximumBytes: Int, allowedOrigin: ProviderOrigin) {
+    init(
+        maximumBytes: Int,
+        allowedOrigin: ProviderOrigin,
+        requestCode: String,
+        timeoutSeconds: Int
+    ) {
         self.maximumBytes = maximumBytes
         self.allowedOrigin = allowedOrigin
+        self.requestCode = requestCode
+        self.timeoutSeconds = timeoutSeconds
     }
 
     func load(
@@ -274,7 +321,7 @@ private final class StreamingRequest: NSObject, @unchecked Sendable {
         continuation?.resume(with: result)
     }
 
-    private static func error(for statusCode: Int) -> APIError? {
+    private func error(for statusCode: Int) -> APIError? {
         switch statusCode {
         case 200..<300:
             nil
@@ -285,7 +332,7 @@ private final class StreamingRequest: NSObject, @unchecked Sendable {
         case 404:
             .notFound
         case 408:
-            .timeout
+            .httpTimeout(requestCode: requestCode)
         case 429:
             .rateLimited
         case 500..<600:
@@ -319,7 +366,7 @@ extension StreamingRequest: URLSessionDataDelegate {
             finish(.failure(APIError.unsafeRedirect), cancelTask: true)
             return
         }
-        if let error = Self.error(for: httpResponse.statusCode) {
+        if let error = error(for: httpResponse.statusCode) {
             completionHandler(.cancel)
             finish(.failure(error), cancelTask: true)
             return
@@ -382,14 +429,21 @@ extension StreamingRequest: URLSessionTaskDelegate {
             if urlError.code == .cancelled {
                 finish(.failure(APIError.cancelled))
             } else if urlError.code == .timedOut {
-                finish(.failure(APIError.timeout))
+                finish(
+                    .failure(
+                        APIError.clientTimeout(
+                            seconds: timeoutSeconds,
+                            requestCode: requestCode
+                        )
+                    )
+                )
             } else {
-                finish(.failure(APIError.transport))
+                finish(.failure(APIError.transport(requestCode: requestCode)))
             }
             return
         }
         if error != nil {
-            finish(.failure(APIError.transport))
+            finish(.failure(APIError.transport(requestCode: requestCode)))
             return
         }
 

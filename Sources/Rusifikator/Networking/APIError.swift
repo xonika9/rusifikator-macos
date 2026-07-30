@@ -6,11 +6,12 @@ enum APIError: Error, Equatable, Sendable {
     case unauthorized
     case forbidden
     case notFound
-    case timeout
+    case httpTimeout(requestCode: String)
+    case clientTimeout(seconds: Int, requestCode: String)
     case rateLimited
     case serverError
     case httpError(Int)
-    case transport
+    case transport(requestCode: String)
     case invalidResponse
     case emptyResponse
     case responseTooLarge
@@ -31,16 +32,18 @@ extension APIError: LocalizedError {
             "У ключа нет доступа к выбранной модели."
         case .notFound:
             "Маршрут API не найден. Проверь адрес сервера."
-        case .timeout:
-            "Сервер не ответил вовремя. Попробуй ещё раз."
+        case let .httpTimeout(requestCode):
+            "Сервер остановил запрос по тайм-ауту. Код запроса: \(requestCode)."
+        case let .clientTimeout(seconds, requestCode):
+            "Сервис не ответил за \(seconds) секунд. Код запроса: \(requestCode)."
         case .rateLimited:
             "Слишком много запросов. Подожди и попробуй снова."
         case .serverError:
             "Сервис временно недоступен. Попробуй позже."
         case let .httpError(statusCode):
             "Сервис вернул ошибку HTTP \(statusCode)."
-        case .transport:
-            "Не удалось связаться с сервисом. Проверь сеть и адрес API."
+        case let .transport(requestCode):
+            "Не удалось связаться с сервисом. Проверь сеть и адрес API. Код запроса: \(requestCode)."
         case .invalidResponse:
             "Сервис вернул ответ в несовместимом формате."
         case .emptyResponse:

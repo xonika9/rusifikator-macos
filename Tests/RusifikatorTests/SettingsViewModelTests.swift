@@ -538,7 +538,7 @@ private struct ClipboardStub: ClipboardService {
 
 private struct FailingSaveCredentialStore: CredentialStore {
     func saveAPIKey(_ apiKey: String, for providerURL: URL) throws {
-        throw APIError.transport
+        throw APIError.transport(requestCode: "A1B2C3D4")
     }
 
     func apiKey(for providerURL: URL) throws -> String? {

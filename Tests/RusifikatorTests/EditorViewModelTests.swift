@@ -77,7 +77,8 @@ final class EditorViewModelTests: XCTestCase {
 
     func testSuccessPublishesOnlyCurrentResult() async {
         let client = ControlledEditorAPIClient()
-        let model = makeModel(client: client)
+        let history = HistoryRecorderSpy()
+        let model = makeModel(client: client, history: history)
         model.source = "Исходник"
 
         model.submit(
@@ -97,9 +98,44 @@ final class EditorViewModelTests: XCTestCase {
         XCTAssertTrue(model.canSubmit)
         XCTAssertFalse(model.canCancel)
         XCTAssertTrue(model.isSourceEditable)
+        XCTAssertEqual(history.entries, [
+            .init(source: "Исходник", result: "Готовый текст")
+        ])
     }
 
     func testErrorRetainsSourceAndEditingRemovesStaleError() async {
+        let client = ControlledEditorAPIClient()
+        let history = HistoryRecorderSpy()
+        let model = makeModel(client: client, history: history)
+        model.source = "Исходник"
+
+        model.submit(
+            baseURL: baseURL,
+            model: "model",
+            apiKey: "key",
+            systemPrompt: "system"
+        )
+        await waitForCallCount(1, client: client)
+        await client.fail(call: 0, with: APIError.rateLimited)
+        await waitForState(.error, model: model)
+
+        XCTAssertEqual(model.source, "Исходник")
+        XCTAssertEqual(
+            model.errorMessage,
+            APIError.rateLimited.localizedDescription
+        )
+        XCTAssertNil(model.result)
+        XCTAssertTrue(model.canSubmit)
+        XCTAssertTrue(history.entries.isEmpty)
+
+        model.source = "Исправленный исходник"
+
+        XCTAssertEqual(model.state, .ready)
+        XCTAssertNil(model.errorMessage)
+        XCTAssertNil(model.result)
+    }
+
+    func testUnknownLocalizedErrorDoesNotReachUserMessage() async {
         let client = ControlledEditorAPIClient()
         let model = makeModel(client: client)
         model.source = "Исходник"
@@ -111,22 +147,14 @@ final class EditorViewModelTests: XCTestCase {
             systemPrompt: "system"
         )
         await waitForCallCount(1, client: client)
-        await client.fail(call: 0, with: .rateLimited)
+        await client.fail(call: 0, with: SecretLocalizedError())
         await waitForState(.error, model: model)
 
-        XCTAssertEqual(model.source, "Исходник")
         XCTAssertEqual(
             model.errorMessage,
-            APIError.rateLimited.localizedDescription
+            "Не удалось обработать текст. Попробуй ещё раз."
         )
-        XCTAssertNil(model.result)
-        XCTAssertTrue(model.canSubmit)
-
-        model.source = "Исправленный исходник"
-
-        XCTAssertEqual(model.state, .ready)
-        XCTAssertNil(model.errorMessage)
-        XCTAssertNil(model.result)
+        XCTAssertFalse(model.errorMessage?.contains("must-not-leak") ?? true)
     }
 
     func testEditingAfterSuccessRemovesStaleResult() async {
@@ -154,7 +182,8 @@ final class EditorViewModelTests: XCTestCase {
 
     func testCancelRetainsSourceAndIgnoresLateSuccess() async {
         let client = ControlledEditorAPIClient()
-        let model = makeModel(client: client)
+        let history = HistoryRecorderSpy()
+        let model = makeModel(client: client, history: history)
         model.source = "Не удалять"
 
         model.submit(
@@ -177,6 +206,7 @@ final class EditorViewModelTests: XCTestCase {
 
         XCTAssertEqual(model.state, .cancelled)
         XCTAssertNil(model.result)
+        XCTAssertTrue(history.entries.isEmpty)
     }
 
     func testClearDuringLoadingStaysCompletelyEmptyAfterLateResponse() async {
@@ -220,7 +250,10 @@ final class EditorViewModelTests: XCTestCase {
             systemPrompt: "system-a"
         )
         await waitForCallCount(1, client: client)
-        await client.fail(call: 0, with: .transport)
+        await client.fail(
+            call: 0,
+            with: APIError.transport(requestCode: "A1B2C3D4")
+        )
         await waitForState(.error, model: model)
 
         model.source = "Вторая версия"
@@ -343,9 +376,14 @@ final class EditorViewModelTests: XCTestCase {
 
     private func makeModel(
         client: ControlledEditorAPIClient,
-        clipboard: ClipboardSpy = ClipboardSpy()
+        clipboard: ClipboardSpy = ClipboardSpy(),
+        history: (any HistoryRecording)? = nil
     ) -> EditorViewModel {
-        EditorViewModel(apiClient: client, clipboard: clipboard)
+        EditorViewModel(
+            apiClient: client,
+            clipboard: clipboard,
+            history: history
+        )
     }
 
     private func waitForCallCount(
@@ -396,8 +434,14 @@ private actor ControlledEditorAPIClient: EditorAPIClient {
         continuations[index].resume(returning: value)
     }
 
-    func fail(call index: Int, with error: APIError) {
+    func fail(call index: Int, with error: any Error) {
         continuations[index].resume(throwing: error)
+    }
+}
+
+private struct SecretLocalizedError: LocalizedError {
+    var errorDescription: String? {
+        "must-not-leak"
     }
 }
 
@@ -407,5 +451,19 @@ private final class ClipboardSpy: ClipboardService {
 
     func copy(_ string: String) {
         copiedValues.append(string)
+    }
+}
+
+@MainActor
+private final class HistoryRecorderSpy: HistoryRecording {
+    struct Entry: Equatable {
+        let source: String
+        let result: String
+    }
+
+    private(set) var entries: [Entry] = []
+
+    func record(source: String, result: String) {
+        entries.append(.init(source: source, result: result))
     }
 }

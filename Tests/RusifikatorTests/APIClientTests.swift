@@ -51,10 +51,15 @@ final class APIClientTests: XCTestCase {
     }
 
     func testRequestHasOnlyRequiredFieldsAndExactlyTwoMessages() async throws {
+        let requestID = UUID(uuidString: "A1B2C3D4-1111-2222-3333-444455556666")!
         URLProtocolStub.handler = { request in
             XCTAssertEqual(request.httpMethod, "POST")
             XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer test-key")
             XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+            XCTAssertEqual(
+                request.value(forHTTPHeaderField: "X-Request-ID"),
+                requestID.uuidString
+            )
 
             let body = try requestBody(request)
             let json = try XCTUnwrap(
@@ -81,7 +86,8 @@ final class APIClientTests: XCTestCase {
             baseURL: XCTUnwrap(URL(string: "https://example.com/v1")),
             model: "proxy/gpt-5.6-terra",
             apiKey: "test-key",
-            systemPrompt: "SYSTEM"
+            systemPrompt: "SYSTEM",
+            requestID: requestID
         )
 
         XCTAssertEqual(result, "Готово")
@@ -197,11 +203,12 @@ final class APIClientTests: XCTestCase {
     }
 
     func testHTTPStatusesMapToUserSafeErrors() async throws {
+        let requestID = UUID(uuidString: "A1B2C3D4-1111-2222-3333-444455556666")!
         let cases: [(Int, APIError)] = [
             (401, .unauthorized),
             (403, .forbidden),
             (404, .notFound),
-            (408, .timeout),
+            (408, .httpTimeout(requestCode: "A1B2C3D4")),
             (429, .rateLimited),
             (500, .serverError),
             (503, .serverError)
@@ -212,7 +219,7 @@ final class APIClientTests: XCTestCase {
                 .init(statusCode: statusCode, body: Data())
             }
 
-            await assertRequestThrows(expected)
+            await assertRequestThrows(expected, requestID: requestID)
         }
     }
 
@@ -251,8 +258,19 @@ final class APIClientTests: XCTestCase {
             URLProtocolStub.handler = { _ in
                 throw URLError(code)
             }
-            await assertRequestThrows(.transport)
+            await assertRequestThrows(.transport(requestCode: "A1B2C3D4"), requestID: fixedRequestID)
         }
+    }
+
+    func testClientTimeoutIsDistinctAndIncludesSafeRequestCode() async {
+        URLProtocolStub.handler = { _ in
+            throw URLError(.timedOut)
+        }
+
+        await assertRequestThrows(
+            .clientTimeout(seconds: 90, requestCode: "A1B2C3D4"),
+            requestID: fixedRequestID
+        )
     }
 
     func testCancellationIsCategorizedWithoutRetry() async throws {
@@ -342,10 +360,41 @@ final class APIClientTests: XCTestCase {
 
         XCTAssertNil(configuration.urlCache)
         XCTAssertEqual(configuration.requestCachePolicy, .reloadIgnoringLocalCacheData)
-        XCTAssertEqual(configuration.timeoutIntervalForRequest, 60)
+        XCTAssertEqual(configuration.timeoutIntervalForRequest, 90)
         XCTAssertEqual(configuration.timeoutIntervalForResource, 90)
         XCTAssertFalse(configuration.waitsForConnectivity)
         XCTAssertTrue(configuration.protocolClasses?.first === URLProtocolStub.self)
+    }
+
+    func testConnectionCheckUsesThirtySecondTimeout() {
+        let configuration = OpenAICompatibleClient.makeConfiguration(
+            timeoutInterval: 30,
+            protocolClasses: [URLProtocolStub.self]
+        )
+
+        XCTAssertEqual(configuration.timeoutIntervalForRequest, 30)
+        XCTAssertEqual(configuration.timeoutIntervalForResource, 30)
+    }
+
+    func testConnectionCheckReportsItsThirtySecondClientTimeout() async {
+        URLProtocolStub.handler = { _ in
+            throw URLError(.timedOut)
+        }
+
+        do {
+            try await makeClient().checkConnection(
+                baseURL: XCTUnwrap(URL(string: "https://example.com")),
+                model: "model",
+                apiKey: "key",
+                systemPrompt: "SYSTEM"
+            )
+            XCTFail("Expected timeout")
+        } catch let APIError.clientTimeout(seconds, requestCode) {
+            XCTAssertEqual(seconds, 30)
+            XCTAssertEqual(requestCode.count, 8)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
     }
 
     private func makeClient() -> OpenAICompatibleClient {
@@ -358,21 +407,34 @@ final class APIClientTests: XCTestCase {
             baseURL: XCTUnwrap(URL(string: "https://example.com")),
             model: "model",
             apiKey: "key",
-            systemPrompt: "SYSTEM"
+            systemPrompt: "SYSTEM",
+            requestID: fixedRequestID
         )
     }
 
     private func assertRequestThrows(
         _ expected: APIError,
+        requestID: UUID? = nil,
         file: StaticString = #filePath,
         line: UInt = #line
     ) async {
         do {
-            _ = try await performRequest()
+            _ = try await makeClient().clean(
+                text: "TEXT",
+                baseURL: XCTUnwrap(URL(string: "https://example.com")),
+                model: "model",
+                apiKey: "key",
+                systemPrompt: "SYSTEM",
+                requestID: requestID ?? fixedRequestID
+            )
             XCTFail("Expected \(expected)", file: file, line: line)
         } catch {
             XCTAssertEqual(error as? APIError, expected, file: file, line: line)
         }
+    }
+
+    private var fixedRequestID: UUID {
+        UUID(uuidString: "A1B2C3D4-1111-2222-3333-444455556666")!
     }
 }
 
