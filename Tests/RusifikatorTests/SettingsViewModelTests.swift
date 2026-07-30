@@ -74,9 +74,10 @@ final class SettingsViewModelTests: XCTestCase {
         )
 
         model.draftProviderURL = "https://other.example/v1"
-        XCTAssertEqual(model.draftAPIKey, "")
+        XCTAssertEqual(model.draftAPIKey, "existing-secret")
         model.draftProviderURL = SettingsStore.defaultProviderURLString
-        XCTAssertEqual(model.draftAPIKey, "")
+        XCTAssertEqual(model.draftAPIKey, "existing-secret")
+        model.draftAPIKey = ""
 
         model.save()
 
@@ -132,7 +133,7 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertNotEqual(model.loadMessage, "other-secret")
     }
 
-    func testChangingProviderOriginRequiresKeyReentry() throws {
+    func testIncrementalProviderURLTypingPreservesKeyBoundToOriginalOrigin() throws {
         let (defaults, suiteName) = makeDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let store = SettingsStore(defaults: defaults)
@@ -151,9 +152,142 @@ final class SettingsViewModelTests: XCTestCase {
         model.draftProviderURL = "https://liteapi.gotacat.dev/v1"
         XCTAssertEqual(model.draftAPIKey, "current-secret")
 
+        model.draftProviderURL = "https://other.example"
+        XCTAssertEqual(model.draftAPIKey, "current-secret")
+
         model.draftProviderURL = "https://other.example/v1"
-        XCTAssertEqual(model.draftAPIKey, "")
+        XCTAssertEqual(model.draftAPIKey, "current-secret")
         XCTAssertEqual(model.currentAPIKey, "current-secret")
+    }
+
+    func testCheckRejectsKeyBoundToDifferentProviderOrigin() async {
+        let (defaults, suiteName) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let checker = RecordingConnectionChecker()
+        let model = SettingsViewModel(
+            store: SettingsStore(defaults: defaults),
+            credentials: MemoryCredentialStore(),
+            connectionChecker: checker,
+            loginItem: LoginItemController(service: FakeSettingsLoginItemService())
+        )
+
+        model.draftAPIKey = "draft-secret"
+        model.draftProviderURL = "https://other.example/v1"
+        model.checkConnection()
+
+        XCTAssertEqual(
+            model.connectionState,
+            .failure(CredentialStoreError.providerOriginMismatch.localizedDescription)
+        )
+        let call = await checker.recordedCall()
+        XCTAssertNil(call)
+    }
+
+    func testEditingCarriedKeyDoesNotRebindItToDifferentProviderOrigin() async throws {
+        let (defaults, suiteName) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let credentials = MemoryCredentialStore()
+        try credentials.saveAPIKey(
+            "original-secret",
+            for: URL(string: SettingsStore.defaultProviderURLString)!
+        )
+        let checker = RecordingConnectionChecker()
+        let model = SettingsViewModel(
+            store: SettingsStore(defaults: defaults),
+            credentials: credentials,
+            connectionChecker: checker,
+            loginItem: LoginItemController(service: FakeSettingsLoginItemService())
+        )
+
+        model.draftProviderURL = "https://other.example/v1"
+        model.draftAPIKey += "x"
+        model.checkConnection()
+
+        XCTAssertEqual(
+            model.connectionState,
+            .failure(CredentialStoreError.providerOriginMismatch.localizedDescription)
+        )
+        let call = await checker.recordedCall()
+        XCTAssertNil(call)
+
+        model.draftAPIKey = ""
+        model.draftAPIKey = "new-secret"
+        model.checkConnection()
+        await settleTasks()
+        let reboundCall = await checker.recordedCall()
+        XCTAssertEqual(reboundCall?.url.absoluteString, "https://other.example/v1")
+        XCTAssertEqual(reboundCall?.apiKey, "new-secret")
+    }
+
+    func testSaveRejectsKeyBoundToDifferentProviderOrigin() {
+        let (defaults, suiteName) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = SettingsStore(defaults: defaults)
+        let model = SettingsViewModel(
+            store: store,
+            credentials: MemoryCredentialStore(),
+            connectionChecker: RecordingConnectionChecker(),
+            loginItem: LoginItemController(service: FakeSettingsLoginItemService())
+        )
+
+        model.draftAPIKey = "draft-secret"
+        model.draftProviderURL = "https://other.example/v1"
+        model.save()
+
+        XCTAssertEqual(
+            model.saveState,
+            .failure(CredentialStoreError.providerOriginMismatch.localizedDescription)
+        )
+        XCTAssertEqual(store.providerURLString, SettingsStore.defaultProviderURLString)
+    }
+
+    func testSavingEmptyKeyForChangedProviderRejectsOldOriginCredential() throws {
+        let (defaults, suiteName) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = SettingsStore(defaults: defaults)
+        let credentials = MemoryCredentialStore()
+        try credentials.saveAPIKey(
+            "existing-secret",
+            for: URL(string: SettingsStore.defaultProviderURLString)!
+        )
+        let model = SettingsViewModel(
+            store: store,
+            credentials: credentials,
+            connectionChecker: RecordingConnectionChecker(),
+            loginItem: LoginItemController(service: FakeSettingsLoginItemService())
+        )
+
+        model.draftProviderURL = "https://other.example/v1"
+        model.draftAPIKey = ""
+        model.save()
+
+        XCTAssertEqual(
+            model.saveState,
+            .failure(CredentialStoreError.providerOriginMismatch.localizedDescription)
+        )
+        XCTAssertEqual(store.providerURLString, SettingsStore.defaultProviderURLString)
+        XCTAssertEqual(
+            try credentials.apiKey(
+                for: URL(string: SettingsStore.defaultProviderURLString)!
+            ),
+            "existing-secret"
+        )
+    }
+
+    func testChangingProviderPathKeepsNewlyTypedKeyForSameOrigin() {
+        let (defaults, suiteName) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let model = SettingsViewModel(
+            store: SettingsStore(defaults: defaults),
+            credentials: MemoryCredentialStore(),
+            connectionChecker: RecordingConnectionChecker(),
+            loginItem: LoginItemController(service: FakeSettingsLoginItemService())
+        )
+
+        model.draftAPIKey = "draft-secret"
+        model.draftProviderURL = "https://liteapi.gotacat.dev/v2"
+
+        XCTAssertEqual(model.draftAPIKey, "draft-secret")
     }
 
     func testSubmitReloadsKeyForCurrentStoredOrigin() async throws {
@@ -277,6 +411,8 @@ final class SettingsViewModelTests: XCTestCase {
         await checker.succeed(call: 0)
         await settleTasks()
 
+        model.draftAPIKey = ""
+        model.draftAPIKey = "key-for-other-origin"
         model.checkConnection()
         let modelCheckStarted = await waitForConnectionCallCount(2, checker: checker)
         XCTAssertTrue(modelCheckStarted)

@@ -49,7 +49,6 @@ final class SettingsViewModel {
 
     var draftProviderURL: String {
         didSet {
-            clearCarriedKeyForChangedOrigin()
             draftDidChange()
         }
     }
@@ -60,6 +59,7 @@ final class SettingsViewModel {
     }
     var draftAPIKey: String {
         didSet {
+            updateDraftKeyOrigin(previousKey: oldValue)
             draftDidChange()
         }
     }
@@ -90,6 +90,9 @@ final class SettingsViewModel {
 
     @ObservationIgnored
     private var activeConnectionCheckID: UUID?
+
+    @ObservationIgnored
+    private var draftAPIKeyOrigin: ProviderOrigin?
 
     init(
         store: SettingsStore = SettingsStore(),
@@ -123,6 +126,7 @@ final class SettingsViewModel {
             draftAPIKey = ""
             loadMessage = APIError.invalidURL.localizedDescription
         }
+        bindDraftKeyToCurrentOrigin()
     }
 
     var canCheckConnection: Bool {
@@ -161,17 +165,13 @@ final class SettingsViewModel {
     func save() {
         do {
             let values = try validatedDraft()
-            let key = draftAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+            let key = try validatedDraftAPIKey(for: values.url)
             let effectiveKey: String
             if !key.isEmpty {
                 try credentials.saveAPIKey(key, for: values.url)
                 effectiveKey = key
             } else {
-                do {
-                    effectiveKey = try credentials.apiKey(for: values.url) ?? ""
-                } catch CredentialStoreError.providerOriginMismatch {
-                    effectiveKey = ""
-                }
+                effectiveKey = try credentials.apiKey(for: values.url) ?? ""
             }
 
             store.providerURLString = values.urlString
@@ -200,7 +200,13 @@ final class SettingsViewModel {
             return
         }
 
-        let key = draftAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let key: String
+        do {
+            key = try validatedDraftAPIKey(for: values.url)
+        } catch {
+            connectionState = .failure(Self.userMessage(for: error))
+            return
+        }
         let connectionDraft = currentConnectionDraft
         let checkID = UUID()
         activeConnectionCheckID = checkID
@@ -314,18 +320,42 @@ final class SettingsViewModel {
         return (url, urlString, model)
     }
 
-    private func clearCarriedKeyForChangedOrigin() {
-        guard !currentAPIKey.isEmpty, draftAPIKey == currentAPIKey,
-              let currentURL = URL(string: store.providerURLString),
-              let draftURL = URL(string: draftProviderURL),
-              let currentOrigin = try? ProviderOrigin.canonicalString(for: currentURL),
-              let draftOrigin = try? ProviderOrigin.canonicalString(for: draftURL),
-              currentOrigin != draftOrigin
+    private func validatedDraftAPIKey(for providerURL: URL) throws -> String {
+        let key = draftAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else {
+            return key
+        }
+        guard draftAPIKeyOrigin == (try ProviderOrigin(url: providerURL)) else {
+            throw CredentialStoreError.providerOriginMismatch
+        }
+        return key
+    }
+
+    private func bindDraftKeyToCurrentOrigin() {
+        updateDraftKeyOrigin(previousKey: "")
+    }
+
+    private func updateDraftKeyOrigin(previousKey: String) {
+        guard !draftAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            draftAPIKeyOrigin = nil
+            return
+        }
+        guard previousKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || draftAPIKeyOrigin == nil
         else {
             return
         }
+        draftAPIKeyOrigin = providerOrigin(for: draftProviderURL)
+    }
 
-        draftAPIKey = ""
+    private func providerOrigin(for urlString: String) -> ProviderOrigin? {
+        guard let url = URL(
+            string: urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        ) else {
+            return nil
+        }
+        return try? ProviderOrigin(url: url)
     }
 
     private var currentConnectionDraft: ConnectionDraft {

@@ -5,6 +5,7 @@ struct EditorView: View {
     private static let textSurfaceAccessorySize = CGSize(width: 40, height: 36)
 
     @Bindable var editor: EditorViewModel
+    let history: HistoryStore
     let settings: SettingsViewModel
     let openHistory: () -> Void
     let openSettings: () -> Void
@@ -21,7 +22,7 @@ struct EditorView: View {
                 primaryAction
                 resultHeader
                 resultSurface
-                privacyNote
+                footer
             }
             .padding(.top, 8)
             .padding(.horizontal, 16)
@@ -338,14 +339,44 @@ struct EditorView: View {
         .accessibilityLabel("Готовый текст")
     }
 
-    private var privacyNote: some View {
-        Label(
-            "Последние \(HistoryStore.maximumEntryCount) обработок хранятся только на этом Mac",
-            systemImage: "lock.fill"
-        )
-        .font(.system(size: 10))
-        .foregroundStyle(AppTheme.textFaint)
-        .frame(height: 28, alignment: .bottomLeading)
+    @ViewBuilder
+    private var footer: some View {
+        if let message = history.persistenceErrorMessage {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+
+                Text(message)
+                    .font(.system(size: 10))
+                    .foregroundStyle(AppTheme.textSoft)
+                    .lineLimit(1)
+                    .help(message)
+
+                Spacer(minLength: 0)
+
+                Button(
+                    history.isRetryingPersistence
+                        ? "Сохранение…"
+                        : "Повторить"
+                ) {
+                    history.retryPersistence()
+                }
+                .font(.system(size: 10, weight: .medium))
+                .buttonStyle(.plain)
+                .foregroundStyle(AppTheme.accent)
+                .disabled(history.isRetryingPersistence)
+            }
+            .frame(height: 28)
+            .accessibilityElement(children: .contain)
+        } else {
+            Label(
+                "Последние \(HistoryStore.maximumEntryCount) обработок хранятся только на этом Mac",
+                systemImage: "lock.fill"
+            )
+            .font(.system(size: 10))
+            .foregroundStyle(AppTheme.textFaint)
+            .frame(height: 28, alignment: .bottomLeading)
+        }
     }
 
     private var characterCount: String {

@@ -406,6 +406,72 @@ final class APIClientTests: XCTestCase {
         }
     }
 
+    func testRedirectDelegateRejectsCrossOriginTargetsWithoutSecondRequest() async {
+        let lock = NSLock()
+        var requestedURLs: [URL] = []
+        let redirectTargets = [
+            "https://attacker.example/v1/chat/completions",
+            "http://example.com/v1/chat/completions",
+            "https://example.com:8443/v1/chat/completions"
+        ]
+
+        for target in redirectTargets {
+            lock.withLock {
+                requestedURLs = []
+            }
+            URLProtocolStub.handler = { request in
+                lock.withLock {
+                    requestedURLs.append(request.url!)
+                }
+                return .redirect(to: URL(string: target)!)
+            }
+
+            await assertRequestThrows(.unsafeRedirect)
+            XCTAssertEqual(lock.withLock { requestedURLs.count }, 1)
+        }
+    }
+
+    func testRedirectDelegateAllowsSameOriginHTTPSAndPreservesAuthorization() async throws {
+        let lock = NSLock()
+        var requests: [(url: URL, authorization: String?)] = []
+        let initialURL = try XCTUnwrap(
+            URL(string: "https://example.com/v1/chat/completions")
+        )
+        let redirectedURL = try XCTUnwrap(
+            URL(string: "https://example.com/redirected/chat/completions")
+        )
+
+        URLProtocolStub.handler = { request in
+            let url = try XCTUnwrap(request.url)
+            lock.withLock {
+                requests.append(
+                    (url, request.value(forHTTPHeaderField: "Authorization"))
+                )
+            }
+
+            if url == initialURL {
+                var redirectedRequest = request
+                redirectedRequest.url = redirectedURL
+                return .init(
+                    statusCode: 307,
+                    headers: ["Location": redirectedURL.absoluteString],
+                    body: Data(),
+                    redirectRequest: redirectedRequest
+                )
+            }
+            XCTAssertEqual(url, redirectedURL)
+            return .json(#"{"choices":[{"message":{"content":"Готово"}}]}"#)
+        }
+
+        let result = try await performRequest()
+        let capturedRequests = lock.withLock { requests }
+
+        XCTAssertEqual(result, "Готово")
+        XCTAssertEqual(capturedRequests.count, 2)
+        XCTAssertEqual(capturedRequests.last?.url, redirectedURL)
+        XCTAssertEqual(capturedRequests.last?.authorization, "Bearer key")
+    }
+
     func testSessionConfigurationIsEphemeralAndDoesNotWaitOrCache() {
         let configuration = OpenAICompatibleClient.makeConfiguration(
             protocolClasses: [URLProtocolStub.self]
@@ -496,21 +562,33 @@ private final class URLProtocolStub: URLProtocol, @unchecked Sendable {
         let headers: [String: String]
         let body: Data
         let chunkSize: Int?
+        let redirectRequest: URLRequest?
 
         init(
             statusCode: Int = 200,
             headers: [String: String] = ["Content-Type": "application/json"],
             body: Data,
-            chunkSize: Int? = nil
+            chunkSize: Int? = nil,
+            redirectRequest: URLRequest? = nil
         ) {
             self.statusCode = statusCode
             self.headers = headers
             self.body = body
             self.chunkSize = chunkSize
+            self.redirectRequest = redirectRequest
         }
 
         static func json(_ value: String) -> Stub {
             Stub(body: Data(value.utf8))
+        }
+
+        static func redirect(to url: URL) -> Stub {
+            Stub(
+                statusCode: 307,
+                headers: ["Location": url.absoluteString],
+                body: Data(),
+                redirectRequest: URLRequest(url: url)
+            )
         }
     }
 
@@ -553,6 +631,14 @@ private final class URLProtocolStub: URLProtocol, @unchecked Sendable {
                 httpVersion: "HTTP/1.1",
                 headerFields: stub.headers
             )!
+            if let redirectRequest = stub.redirectRequest {
+                client?.urlProtocol(
+                    self,
+                    wasRedirectedTo: redirectRequest,
+                    redirectResponse: response
+                )
+                return
+            }
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
 
             if let chunkSize = stub.chunkSize {

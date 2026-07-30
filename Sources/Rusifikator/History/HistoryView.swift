@@ -12,6 +12,11 @@ struct HistoryView: View {
         VStack(spacing: 0) {
             toolbar
 
+            if let message = history.persistenceErrorMessage,
+               !clearErrorVisible {
+                persistenceError(message)
+            }
+
             if history.isLoading {
                 ProgressView()
                     .controlSize(.small)
@@ -52,10 +57,40 @@ struct HistoryView: View {
             "Не удалось очистить историю",
             isPresented: $clearErrorVisible
         ) {
+            Button("Повторить сохранение") {
+                history.retryPersistence()
+            }
             Button("ОК", role: .cancel) {}
         } message: {
-            Text("Записи остались на месте. Проверь доступ к диску и попробуй ещё раз.")
+            Text("Изменения не удалось полностью сохранить. Записи в этом окне не потеряны.")
         }
+    }
+
+    private func persistenceError(_ message: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+
+            Text(message)
+                .font(.system(size: 10))
+                .foregroundStyle(AppTheme.textSoft)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button(
+                history.isRetryingPersistence
+                    ? "Сохранение…"
+                    : "Повторить"
+            ) {
+                history.retryPersistence()
+            }
+            .font(.system(size: 10, weight: .medium))
+            .buttonStyle(.plain)
+            .foregroundStyle(AppTheme.accent)
+            .disabled(history.isRetryingPersistence)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(AppTheme.raised)
     }
 
     private var toolbar: some View {

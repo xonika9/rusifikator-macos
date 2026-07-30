@@ -26,6 +26,7 @@ struct PopoverRootView: View {
             case .editor:
                 EditorView(
                     editor: editor,
+                    history: history,
                     settings: settings,
                     openHistory: {
                         coordinator.page = .history
