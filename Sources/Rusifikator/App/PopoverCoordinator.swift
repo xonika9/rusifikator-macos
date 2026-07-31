@@ -19,6 +19,7 @@ struct PopoverRootView: View {
     @Bindable var editor: EditorViewModel
     let history: HistoryStore
     let settings: SettingsViewModel
+    let updates: UpdateViewModel
 
     var body: some View {
         Group {
@@ -54,6 +55,7 @@ struct PopoverRootView: View {
             case .settings:
                 SettingsView(
                     model: settings,
+                    updates: updates,
                     close: {
                         coordinator.page = .editor
                     }

@@ -374,15 +374,199 @@ final class EditorViewModelTests: XCTestCase {
         XCTAssertTrue(model.copiedConfirmationVisible)
     }
 
+    // MARK: - Cleanup after a minute of hidden time
+
+    func testShortlyHiddenPopoverKeepsEditorContent() {
+        let clock = TestClock()
+        let model = makeModel(client: ControlledEditorAPIClient(), clock: clock)
+        model.source = "Черновик"
+
+        model.popoverDidHide()
+        clock.advance(by: 59)
+        model.popoverWillShow()
+
+        XCTAssertEqual(model.source, "Черновик")
+        XCTAssertEqual(model.state, .ready)
+        XCTAssertFalse(model.idleResetIsPending)
+    }
+
+    func testMinuteOfHiddenTimeClearsEditorWithoutTouchingHistory() async {
+        let client = ControlledEditorAPIClient()
+        let history = HistoryRecorderSpy()
+        let clock = TestClock()
+        let clocked = makeModel(client: client, history: history, clock: clock)
+
+        clocked.source = "Расшифровка"
+        clocked.submit(
+            baseURL: baseURL,
+            model: "model",
+            apiKey: "key",
+            systemPrompt: "system"
+        )
+        await waitForCallCount(1, client: client)
+        await client.succeed(call: 0, with: "Результат")
+        await waitForState(.success, model: clocked)
+        clocked.copyResult()
+
+        clocked.popoverDidHide()
+        clock.advance(by: 60)
+        clocked.popoverWillShow()
+
+        XCTAssertEqual(clocked.source, "")
+        XCTAssertNil(clocked.result)
+        XCTAssertNil(clocked.errorMessage)
+        XCTAssertFalse(clocked.copiedConfirmationVisible)
+        XCTAssertEqual(clocked.state, .empty)
+        XCTAssertEqual(
+            history.entries,
+            [.init(source: "Расшифровка", result: "Результат")]
+        )
+    }
+
+    func testErrorAndCancelledMarkersAreClearedTogetherWithTheText() async {
+        let client = ControlledEditorAPIClient()
+        let clock = TestClock()
+        let model = makeModel(client: client, clock: clock)
+        model.source = "Исходник"
+        model.submit(
+            baseURL: baseURL,
+            model: "model",
+            apiKey: "key",
+            systemPrompt: "system"
+        )
+        await waitForCallCount(1, client: client)
+        await client.fail(
+            call: 0,
+            with: APIError.transport(requestCode: "A1B2C3D4")
+        )
+        await waitForState(.error, model: model)
+
+        model.popoverDidHide()
+        clock.advance(by: 120)
+        model.popoverWillShow()
+
+        XCTAssertEqual(model.state, .empty)
+        XCTAssertNil(model.errorMessage)
+        XCTAssertEqual(model.source, "")
+    }
+
+    func testVisiblePopoverIsNeverClearedNoMatterHowLongItStaysOpen() {
+        let clock = TestClock()
+        let model = makeModel(client: ControlledEditorAPIClient(), clock: clock)
+        model.source = "Долгий черновик"
+
+        model.popoverDidHide()
+        clock.advance(by: 300)
+        model.popoverWillShow()
+        XCTAssertEqual(model.source, "")
+
+        model.source = "Новый черновик"
+        clock.advance(by: 3_600)
+
+        XCTAssertEqual(model.source, "Новый черновик")
+        XCTAssertEqual(model.state, .ready)
+    }
+
+    func testWaitingPeriodRestartsAfterEachClosing() {
+        let clock = TestClock()
+        let model = makeModel(client: ControlledEditorAPIClient(), clock: clock)
+        model.source = "Черновик"
+
+        model.popoverDidHide()
+        clock.advance(by: 90)
+        model.popoverWillShow()
+        XCTAssertEqual(model.source, "")
+
+        model.source = "Следующий черновик"
+        model.popoverDidHide()
+        clock.advance(by: 30)
+        model.popoverWillShow()
+
+        XCTAssertEqual(model.source, "Следующий черновик")
+    }
+
+    func testRunningRequestSurvivesTheCleanupAndStillReachesHistory() async {
+        let client = ControlledEditorAPIClient()
+        let history = HistoryRecorderSpy()
+        let clock = TestClock()
+        let model = makeModel(client: client, history: history, clock: clock)
+        model.source = "Длинная расшифровка"
+        model.submit(
+            baseURL: baseURL,
+            model: "model",
+            apiKey: "key",
+            systemPrompt: "system"
+        )
+        await waitForCallCount(1, client: client)
+
+        model.popoverDidHide()
+        clock.advance(by: 120)
+        model.popoverWillShow()
+
+        // The request keeps running and the text stays until it is safe to drop.
+        XCTAssertEqual(model.state, .loading)
+        XCTAssertEqual(model.source, "Длинная расшифровка")
+        XCTAssertTrue(model.idleResetIsPending)
+
+        await client.succeed(call: 0, with: "Готовый текст")
+        await waitForState(.success, model: model)
+        XCTAssertEqual(
+            history.entries,
+            [.init(source: "Длинная расшифровка", result: "Готовый текст")]
+        )
+
+        // The postponed cleanup happens at the next opening, even a quick one.
+        model.popoverDidHide()
+        clock.advance(by: 1)
+        model.popoverWillShow()
+
+        XCTAssertEqual(model.source, "")
+        XCTAssertEqual(model.state, .empty)
+        XCTAssertFalse(model.idleResetIsPending)
+        XCTAssertEqual(history.entries.count, 1)
+    }
+
+    func testManualClearDropsAPostponedCleanup() async {
+        let client = ControlledEditorAPIClient()
+        let clock = TestClock()
+        let model = makeModel(client: client, clock: clock)
+        model.source = "Расшифровка"
+        model.submit(
+            baseURL: baseURL,
+            model: "model",
+            apiKey: "key",
+            systemPrompt: "system"
+        )
+        await waitForCallCount(1, client: client)
+
+        model.popoverDidHide()
+        clock.advance(by: 120)
+        model.popoverWillShow()
+        XCTAssertTrue(model.idleResetIsPending)
+
+        model.clear()
+        XCTAssertFalse(model.idleResetIsPending)
+
+        model.source = "Свежий черновик"
+        model.popoverDidHide()
+        clock.advance(by: 1)
+        model.popoverWillShow()
+
+        XCTAssertEqual(model.source, "Свежий черновик")
+    }
+
     private func makeModel(
         client: ControlledEditorAPIClient,
         clipboard: ClipboardSpy = ClipboardSpy(),
-        history: (any HistoryRecording)? = nil
+        history: (any HistoryRecording)? = nil,
+        clock: TestClock? = nil
     ) -> EditorViewModel {
-        EditorViewModel(
+        let clock = clock ?? TestClock()
+        return EditorViewModel(
             apiClient: client,
             clipboard: clipboard,
-            history: history
+            history: history,
+            now: { clock.now }
         )
     }
 
@@ -436,6 +620,25 @@ private actor ControlledEditorAPIClient: EditorAPIClient {
 
     func fail(call index: Int, with error: any Error) {
         continuations[index].resume(throwing: error)
+    }
+}
+
+/// Wall clock under test control, so the waiting period can be exercised
+/// without waiting and independently of any running timer.
+private final class TestClock: @unchecked Sendable {
+    private let mutex = NSLock()
+    private var current = Date(timeIntervalSince1970: 1_800_000_000)
+
+    var now: Date {
+        mutex.lock()
+        defer { mutex.unlock() }
+        return current
+    }
+
+    func advance(by seconds: TimeInterval) {
+        mutex.lock()
+        current = current.addingTimeInterval(seconds)
+        mutex.unlock()
     }
 }
 

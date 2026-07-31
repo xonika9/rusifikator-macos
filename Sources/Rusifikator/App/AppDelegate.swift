@@ -2,20 +2,23 @@ import AppKit
 import SwiftUI
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     let history: HistoryStore
     let editor: EditorViewModel
     let settings: SettingsViewModel
+    let updates: UpdateViewModel
     let coordinator: PopoverCoordinator
 
     private let popover = NSPopover()
     private var statusItem: NSStatusItem?
+    private var updater: SparkleUpdaterService?
 
     override init() {
         let history = HistoryStore()
         self.history = history
         editor = EditorViewModel(history: history)
         settings = SettingsViewModel()
+        updates = UpdateViewModel()
         coordinator = PopoverCoordinator()
         super.init()
     }
@@ -23,6 +26,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         configurePopover()
         configureStatusItem()
+        configureUpdater()
+
+        SingleInstanceGate.shared.onActivationRequest = { [weak self] in
+            self?.activateFromAnotherInstance()
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -57,9 +65,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApplication.shared.terminate(nil)
     }
 
+    /// Another copy of the application was started and asked this one to come
+    /// forward instead of opening a second menu bar icon.
+    private func activateFromAnotherInstance() {
+        NSApplication.shared.activate()
+        coordinator.page = .editor
+        showPopover()
+    }
+
+    func popoverWillShow(_ notification: Notification) {
+        editor.popoverWillShow()
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        editor.popoverDidHide()
+    }
+
     private func configurePopover() {
         popover.behavior = .transient
         popover.animates = true
+        popover.delegate = self
         popover.contentSize = NSSize(
             width: PopoverLayout.width,
             height: PopoverLayout.height
@@ -69,9 +94,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 coordinator: coordinator,
                 editor: editor,
                 history: history,
-                settings: settings
+                settings: settings,
+                updates: updates
             )
         )
+    }
+
+    private func configureUpdater() {
+        let updates = updates
+        let service = SparkleUpdaterService { report in
+            updates.handle(report)
+        }
+        updater = service
+        updates.attach(service)
     }
 
     private func configureStatusItem() {

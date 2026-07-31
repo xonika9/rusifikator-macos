@@ -419,6 +419,7 @@ private enum SettingsValidationError: LocalizedError {
 
 struct SettingsView: View {
     @Bindable var model: SettingsViewModel
+    let updates: UpdateViewModel
     let close: () -> Void
 
     @State private var resetConfirmationVisible = false
@@ -498,6 +499,7 @@ struct SettingsView: View {
 
                     loginItemRow
                     connectionPanel
+                    updatePanel
 
                 }
                 .padding(.top, 14)
@@ -674,6 +676,69 @@ struct SettingsView: View {
         .padding(.horizontal, 10)
         .frame(minHeight: 48)
         .background(AppTheme.surface, in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private var updatePanel: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(updateTitle)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(updateTitleColor)
+
+                Text(updateDetail)
+                    .font(.system(size: 10))
+                    .foregroundStyle(AppTheme.textSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer()
+
+            Button(updates.state == .checking ? "Проверяю…" : "Проверить обновления") {
+                updates.checkForUpdates()
+            }
+            .buttonStyle(SettingsSecondaryButtonStyle())
+            .disabled(!updates.canCheck)
+        }
+        .padding(.horizontal, 10)
+        .frame(minHeight: 48)
+        .background(AppTheme.surface, in: RoundedRectangle(cornerRadius: 10))
+        .padding(.top, 10)
+    }
+
+    private var updateTitle: String {
+        switch updates.state {
+        case .idle:
+            "Обновления"
+        case .checking:
+            "Проверяю обновления…"
+        case .upToDate:
+            "Установлена последняя версия"
+        case let .available(version):
+            "Доступна версия \(version)"
+        case .failed:
+            "Не удалось проверить обновления"
+        }
+    }
+
+    private var updateTitleColor: Color {
+        switch updates.state {
+        case .available, .upToDate:
+            AppTheme.accent
+        case .failed:
+            AppTheme.danger
+        case .idle, .checking:
+            AppTheme.text
+        }
+    }
+
+    private var updateDetail: String {
+        if case let .failed(message) = updates.state {
+            return message
+        }
+        if case .available = updates.state {
+            return "Установку подтвердишь в окне обновления."
+        }
+        return updates.installedVersionDescription
     }
 
     private var footer: some View {

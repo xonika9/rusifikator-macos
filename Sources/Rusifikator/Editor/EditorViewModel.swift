@@ -68,14 +68,29 @@ final class EditorViewModel {
     @ObservationIgnored
     private var copyConfirmationTask: Task<Void, Never>?
 
+    @ObservationIgnored
+    private let now: @Sendable () -> Date
+
+    @ObservationIgnored
+    private var hiddenSince: Date?
+
+    @ObservationIgnored
+    private(set) var idleResetIsPending = false
+
+    /// How long the popover has to stay closed before the next opening starts
+    /// from a clean editor.
+    static let idleResetInterval: TimeInterval = 60
+
     init(
         apiClient: any EditorAPIClient = OpenAIEditorAPIClient(),
         clipboard: any ClipboardService = SystemClipboardService(),
-        history: (any HistoryRecording)? = nil
+        history: (any HistoryRecording)? = nil,
+        now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.apiClient = apiClient
         self.clipboard = clipboard
         self.history = history
+        self.now = now
     }
 
     var canSubmit: Bool {
@@ -153,11 +168,46 @@ final class EditorViewModel {
 
     func clear() {
         invalidateActiveRequest()
+        idleResetIsPending = false
+        resetTransientState()
+    }
+
+    /// Drops the working text and every transient marker around it. History is
+    /// a separate store and is never touched here.
+    private func resetTransientState() {
         result = nil
         errorMessage = nil
         hideCopyConfirmation()
         source = ""
         state = .empty
+    }
+
+    /// The popover became hidden. The waiting period is measured with the wall
+    /// clock, so time spent with the Mac asleep counts just like any other.
+    func popoverDidHide() {
+        hiddenSince = now()
+    }
+
+    /// The popover is about to be shown again.
+    func popoverWillShow() {
+        if let hiddenSince,
+           now().timeIntervalSince(hiddenSince) >= Self.idleResetInterval {
+            idleResetIsPending = true
+        }
+        hiddenSince = nil
+
+        guard idleResetIsPending else {
+            return
+        }
+        // A request that is already running is never sacrificed for a cleanup:
+        // it finishes, lands in history, and the reset waits for the next
+        // opening.
+        guard state != .loading else {
+            return
+        }
+
+        idleResetIsPending = false
+        resetTransientState()
     }
 
     func copyResult() {

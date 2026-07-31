@@ -8,6 +8,7 @@ cd "$repo_root"
 swift build -c release
 bin_path=$(swift build -c release --show-bin-path)
 executable_path="$bin_path/Rusifikator"
+sparkle_framework_path="$bin_path/Sparkle.framework"
 info_plist_path="$repo_root/Sources/Rusifikator/Resources/Rusifikator-Info.plist"
 app_path="$repo_root/dist/Rusifikator.app"
 staging_root=$(mktemp -d "${TMPDIR:-/tmp}/rusifikator-package.XXXXXX")
@@ -22,7 +23,15 @@ trap cleanup EXIT
   print -u2 "Release executable is missing: $executable_path"
   exit 1
 }
-install -d "$staging_app/Contents/MacOS" "$staging_app/Contents/Resources"
+[[ -d "$sparkle_framework_path" ]] || {
+  print -u2 "Sparkle.framework is missing: $sparkle_framework_path"
+  exit 1
+}
+install -d "$staging_app/Contents/MacOS" "$staging_app/Contents/Resources" \
+  "$staging_app/Contents/Frameworks"
+# ditto keeps the framework's symlinks and sealed resources intact; a copy that
+# follows symlinks breaks its code signature.
+ditto "$sparkle_framework_path" "$staging_app/Contents/Frameworks/Sparkle.framework"
 install -m 755 "$executable_path" "$staging_app/Contents/MacOS/Rusifikator"
 install -m 644 "$info_plist_path" "$staging_app/Contents/Info.plist"
 install -m 644 \

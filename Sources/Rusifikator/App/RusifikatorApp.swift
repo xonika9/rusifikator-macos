@@ -22,7 +22,6 @@ enum FixedSystemPrompt {
     }()
 }
 
-@main
 struct RusifikatorApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self)
     private var appDelegate
