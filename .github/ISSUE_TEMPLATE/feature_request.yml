@@ -1,0 +1,33 @@
+name: Idea or improvement
+description: Suggest a change to existing behavior
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This utility stays deliberately narrow: it cleans up a Russian voice
+        transcript and does nothing else. Ideas that sharpen that job land far
+        more easily than ideas that widen it.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What goes wrong today, in terms of what you were trying to do.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you propose
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you already tried or considered
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - label: This keeps the application to one job and does not add a second product to it.

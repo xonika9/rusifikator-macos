@@ -482,7 +482,7 @@ Program.
 
 ### Этап 1. Технический скелет
 
-- создать репозиторий `/Users/xonika/Documents/projects/rusifikator-macos/`;
+- создать репозиторий `rusifikator-macos/`;
 - создать macOS App target, `MenuBarExtra`, `Settings`, `LSUIElement`;
 - проверить открытие, фокус и настройки на двух мониторах;
 - выбрать подтверждённый минимум macOS.

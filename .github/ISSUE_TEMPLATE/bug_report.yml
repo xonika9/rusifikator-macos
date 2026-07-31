@@ -1,0 +1,64 @@
+name: Bug report
+description: Something behaves differently from what the README describes
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not paste API keys or real transcripts. If the report is about a
+        vulnerability or leaked credentials, close this and follow
+        [SECURITY.md](https://github.com/xonika9/rusifikator-macos/blob/main/SECURITY.md)
+        instead.
+  - type: input
+    id: version
+    attributes:
+      label: Application version
+      description: Right click the menu bar icon; the version is at the top of the menu.
+      placeholder: "1.0"
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: "26.1, Apple Silicon"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead
+      description: Exact wording of any error message, and a screenshot if the interface is involved.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How it was installed
+      options:
+        - Disk image from a release
+        - Built from source
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Provider and model if the cleanup itself is involved, with the key removed.

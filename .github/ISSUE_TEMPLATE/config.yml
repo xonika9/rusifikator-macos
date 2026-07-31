@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security or privacy report
+    url: https://github.com/xonika9/rusifikator-macos/security/advisories/new
+    about: Vulnerabilities, leaked credentials, or anything containing private data. Never a public issue.
+  - name: Installation and updating
+    url: https://github.com/xonika9/rusifikator-macos#установка
+    about: The first launch is blocked by Gatekeeper on purpose. The README explains how to unblock it.

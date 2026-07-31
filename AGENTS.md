@@ -6,8 +6,16 @@ This is a native macOS 26 menu-bar application built as a Swift Package.
 
 ## Sources of truth
 
-- `README.md` owns product behavior, setup, usage, updating, release
-  maintenance, and privacy disclosures.
+- `README.md` is the public front page: product behavior, installation, usage,
+  updating, the limits of a build without Developer ID, and privacy
+  disclosures. It is written for the person who installs the application, not
+  for the maintainer. `README.en.md` is its English translation and must stay
+  in step with it.
+- `docs/RELEASING.md` owns release maintenance: version numbering, the release
+  scripts, storage of the update signing key, preparing the next version, and
+  recovery from a failed release.
+- `CONTRIBUTING.md` owns the contributor-facing environment, checks and pull
+  request expectations; `SECURITY.md` owns vulnerability reporting and scope.
 - `DESIGN.md` owns visual and interaction constraints.
 - `CHANGELOG.md` owns the user-visible history of released versions.
 - `Sources/Rusifikator/Resources/Rusifikator-Info.plist` owns the canonical
@@ -55,7 +63,15 @@ scripts/build-release-artifacts.sh   # dmg, appcast.xml, checksums, notes
 scripts/verify-release-artifacts.sh  # verify what was built
 ```
 
-Publication is a separate, explicitly authorised step.
+Publication is a separate, explicitly authorised step. The full procedure lives
+in `docs/RELEASING.md`.
+
+## Public repository
+
+This repository is public. Keep maintainer-only material out of `README.md`,
+never commit local absolute paths, and keep the community files
+(`LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`,
+`.github/`) consistent with the other public repositories of this owner.
 
 ## Validation
 
