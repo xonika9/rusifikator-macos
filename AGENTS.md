@@ -2,8 +2,6 @@
 
 This is a native macOS 26 menu-bar application built as a Swift Package.
 
-- Never create branches — always commit and work directly on `main`.
-
 ## Sources of truth
 
 - `README.md` is the public front page: product behavior, installation, usage,
