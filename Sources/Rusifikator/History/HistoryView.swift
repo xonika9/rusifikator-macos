@@ -227,24 +227,9 @@ struct HistoryView: View {
     }
 
     private func copyButton(for entry: HistoryEntry) -> some View {
-        let copied = copiedEntryID == entry.id
-
-        return Button {
+        CopyTextButton(isConfirming: copiedEntryID == entry.id) {
             copy(entry)
-        } label: {
-            Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                .font(.system(size: 13, weight: .medium))
-                .frame(
-                    width: TextSurfaceAccessory.size,
-                    height: TextSurfaceAccessory.size
-                )
-                .contentShape(Rectangle())
         }
-        .buttonStyle(FloatingIconButtonStyle())
-        .help(copied ? "Скопировано" : "Скопировать готовый текст")
-        .accessibilityLabel(
-            copied ? "Скопировано" : "Скопировать готовый текст"
-        )
         .accessibilityHint("Копирует готовый текст этой обработки")
     }
 
@@ -367,36 +352,27 @@ struct HistoryDetailView: View {
             )
         )
         .overlay(alignment: .topTrailing) {
-            Button {
-                SystemClipboardService().copy(entry.result)
-                copied = true
-                copyConfirmationTask?.cancel()
-                copyConfirmationTask = Task {
-                    try? await Task.sleep(for: .seconds(1.5))
-                    guard !Task.isCancelled else {
-                        return
-                    }
-                    copied = false
-                }
-            } label: {
-                Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                    .font(.system(size: 13, weight: .medium))
-                    .frame(
-                        width: TextSurfaceAccessory.size,
-                        height: TextSurfaceAccessory.size
-                    )
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(FloatingIconButtonStyle())
-            .help(copied ? "Скопировано" : "Скопировать готовый текст")
-            .accessibilityLabel(copied ? "Скопировано" : "Скопировать готовый текст")
-            .padding(TextSurfaceAccessory.inset)
+            CopyTextButton(isConfirming: copied, action: copy)
+                .padding(TextSurfaceAccessory.inset)
         }
         .background(AppTheme.surface)
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(AppTheme.line, lineWidth: 1)
+        }
+    }
+
+    private func copy() {
+        SystemClipboardService().copy(entry.result)
+        copied = true
+        copyConfirmationTask?.cancel()
+        copyConfirmationTask = Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else {
+                return
+            }
+            copied = false
         }
     }
 

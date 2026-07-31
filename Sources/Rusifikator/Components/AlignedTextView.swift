@@ -156,6 +156,11 @@ final class AlignedTextContainer: NSView {
         )
     }
 
+    /// Указатель над кнопкой. Выключенная кнопка не обещает нажатия.
+    var accessoryCursor: NSCursor {
+        trailingAccessoryButton?.isEnabled == true ? .pointingHand : .arrow
+    }
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
@@ -218,6 +223,7 @@ final class AlignedTextContainer: NSView {
     }
 
     private var laidOutWidth: CGFloat = -1
+    private var laidOutAccessoryFrame: NSRect?
 
     override func layout() {
         super.layout()
@@ -250,12 +256,18 @@ final class AlignedTextContainer: NSView {
     private func updateAccessoryCursorArea() {
         guard let frame = accessoryButtonFrame else {
             accessoryCursorView.isHidden = true
+            laidOutAccessoryFrame = nil
             return
         }
         accessoryCursorView.isHidden = false
+        // Область указателя сама следит за сменой курсора, а вот за место
+        // отвечает раскладка: пересчитывать его на каждом проходе не нужно.
+        accessoryCursorView.cursor = accessoryCursor
+        guard frame != laidOutAccessoryFrame else {
+            return
+        }
+        laidOutAccessoryFrame = frame
         accessoryCursorView.frame = frame
-        accessoryCursorView.cursor =
-            trailingAccessoryButton?.isEnabled == true ? .pointingHand : .arrow
         window?.invalidateCursorRects(for: accessoryCursorView)
     }
 
@@ -331,11 +343,7 @@ final class AccessoryAwareTextView: NSTextView {
         guard frame.contains(point) else {
             return false
         }
-        if host.trailingAccessoryButton?.isEnabled == true {
-            NSCursor.pointingHand.set()
-        } else {
-            NSCursor.arrow.set()
-        }
+        host.accessoryCursor.set()
         return true
     }
 }

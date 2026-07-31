@@ -304,33 +304,10 @@ struct EditorView: View {
             )
         )
         .overlay(alignment: .topTrailing) {
-            Button {
+            CopyTextButton(isConfirming: editor.copiedConfirmationVisible) {
                 editor.copyResult()
-            } label: {
-                Image(
-                    systemName: editor.copiedConfirmationVisible
-                        ? "checkmark"
-                        : "doc.on.doc"
-                )
-                .font(.system(size: 13, weight: .medium))
-                .frame(
-                    width: TextSurfaceAccessory.size,
-                    height: TextSurfaceAccessory.size
-                )
-                .contentShape(Rectangle())
             }
-            .buttonStyle(FloatingIconButtonStyle())
             .disabled(!editor.canCopy)
-            .help(
-                editor.copiedConfirmationVisible
-                    ? "Скопировано"
-                    : "Скопировать готовый текст"
-            )
-            .accessibilityLabel(
-                editor.copiedConfirmationVisible
-                    ? "Скопировано"
-                    : "Скопировать готовый текст"
-            )
             .padding(TextSurfaceAccessory.inset)
         }
         .background(AppTheme.surface)
