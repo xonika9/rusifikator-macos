@@ -105,15 +105,15 @@ struct EditorView: View {
                 editor.clear()
                 sourceIsFocused = true
             } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 14))
+                Image(systemName: "xmark.circle")
+                    .font(.system(size: TextSurfaceAccessory.iconSize))
                     .frame(
                         width: TextSurfaceAccessory.size,
                         height: TextSurfaceAccessory.size
                     )
                     .contentShape(Rectangle())
             }
-            .buttonStyle(FloatingIconButtonStyle())
+            .buttonStyle(FloatingIconButtonStyle(surface: sourceSurface))
             .disabled(!clearIsAvailable)
             .opacity(editor.source.isEmpty ? 0 : 1)
             .help("Очистить исходный и готовый текст")
@@ -304,7 +304,10 @@ struct EditorView: View {
             )
         )
         .overlay(alignment: .topTrailing) {
-            CopyTextButton(isConfirming: editor.copiedConfirmationVisible) {
+            CopyTextButton(
+                isConfirming: editor.copiedConfirmationVisible,
+                surface: AppTheme.surface
+            ) {
                 editor.copyResult()
             }
             .disabled(!editor.canCopy)

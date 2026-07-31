@@ -12,6 +12,10 @@ enum AppTheme {
     static let accent = Color(red: 0.157, green: 0.443, blue: 0.353)
     static let accentHover = Color(red: 0.129, green: 0.373, blue: 0.298)
     static let accentSoft = Color(red: 0.890, green: 0.941, blue: 0.918)
+    /// Отклик кнопки-иконки: тон текста, а не своя краска, поэтому подсветка
+    /// одинаково ложится и на белую поверхность, и на серую.
+    static let hoverTint = text.opacity(0.06)
+    static let pressedTint = text.opacity(0.10)
     static let danger = Color(red: 0.663, green: 0.247, blue: 0.220)
     static let dangerSoft = Color(red: 0.973, green: 0.914, blue: 0.906)
 }

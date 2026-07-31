@@ -6,19 +6,21 @@ import SwiftUI
 /// живёт в модели, у истории — рядом с открытой записью.
 struct CopyTextButton: View {
     let isConfirming: Bool
+    /// Цвет поверхности, на которой лежит кнопка.
+    let surface: Color
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             Image(systemName: isConfirming ? "checkmark" : "doc.on.doc")
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: TextSurfaceAccessory.iconSize))
                 .frame(
                     width: TextSurfaceAccessory.size,
                     height: TextSurfaceAccessory.size
                 )
                 .contentShape(Rectangle())
         }
-        .buttonStyle(FloatingIconButtonStyle())
+        .buttonStyle(FloatingIconButtonStyle(surface: surface))
         .help(title)
         .accessibilityLabel(title)
     }

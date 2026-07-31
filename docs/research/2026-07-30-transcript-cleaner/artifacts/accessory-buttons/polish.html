@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>«Русификатор» — одна кнопка на двух поверхностях</title>
+<style>
+:root{
+  --canvas:#f3f0e8; --window:#fcfcfb; --surface:#f4f5f3; --raised:#ffffff;
+  --text:#1d211f; --text-soft:#626864; --text-faint:#6b726d; --text-faint:#6b716d;
+  --line:#d9ddd9; --accent:#28715a;
+  --ui:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Arial,sans-serif;
+  --mono:"SFMono-Regular",Consolas,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--canvas);color:var(--text);
+  font:14px/1.6 var(--ui);-webkit-font-smoothing:antialiased}
+.page{width:min(1240px,calc(100% - 2.5rem));margin-inline:auto;padding-block:2.5rem 4rem}
+h1{font:600 1.9rem/1.2 var(--ui);margin:0 0 .4rem;letter-spacing:-.01em}
+.lede{color:var(--text-soft);max-width:74ch;margin:0 0 1.6rem}
+.lede b{color:var(--text);font-weight:600}
+
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1.5rem}
+@media (max-width:1000px){.grid{grid-template-columns:1fr}}
+
+.card{background:var(--window);border:1px solid var(--line);border-radius:16px;
+  padding:1.1rem 1.2rem 1.3rem}
+.card.wide{grid-column:1 / -1}
+.card-head{display:flex;align-items:baseline;gap:.55rem;margin-bottom:.15rem}
+.num{font:600 .7rem/1 var(--mono);color:var(--text-faint);letter-spacing:.08em}
+.card h2{font:600 1.02rem/1.3 var(--ui);margin:0}
+.card .about{margin:.25rem 0 1rem;font-size:.82rem;line-height:1.5;color:var(--text-soft)}
+.trade{margin:.9rem 0 0;font-size:.78rem;line-height:1.5;color:var(--text-faint)}
+.trade b{color:var(--text-soft);font-weight:600}
+.pair{display:flex;gap:14px;flex-wrap:wrap}
+.mock{width:min(100%,360px);flex:1 1 300px}
+
+/* --- поле ---------------------------------------------------------------- */
+.field-head{display:flex;align-items:center;gap:8px;height:20px;margin-bottom:4px}
+.field-head .label{font:600 11px/1 var(--ui);color:var(--text-soft)}
+.field-head .meta{margin-left:auto;font:400 10px/1 var(--ui);color:var(--text-faint);
+  font-variant-numeric:tabular-nums}
+
+.field{position:relative;height:132px;border:1px solid var(--line);border-radius:8px;
+  background:var(--fill);overflow:hidden;--fill:#ffffff}
+.field.focused{border-color:var(--accent);box-shadow:0 0 0 .5px var(--accent)}
+.field.result{--fill:#f4f5f3}
+.scroll{height:100%;overflow-y:auto;padding:9px 10px;font:13px/1.35 var(--ui);
+  color:var(--text);scrollbar-width:thin}
+.scroll p{margin:0 0 10px}
+.scroll p:last-child{margin-bottom:0}
+
+/* --- кнопка -------------------------------------------------------------- */
+.pin{position:absolute;top:4px;right:4px;width:30px;height:30px;padding:0;border:0;
+  display:inline-flex;align-items:center;justify-content:center;
+  background:transparent;color:var(--text-soft);cursor:pointer;border-radius:8px;
+  transition:color .12s ease,background-color .12s ease}
+.pin svg{width:15px;height:15px;display:block;position:relative}
+.pin:hover{color:var(--text)}
+.pin:active{color:var(--accent)}
+
+/* фоновое пятно: рисуется цветом самой поверхности */
+.veil{position:absolute;pointer-events:none}
+
+/* 00 — как сейчас: пятно всегда почти белое, фон поля не учитывается */
+.now .veil{top:-6px;right:-6px;width:54px;height:54px;
+  background:radial-gradient(closest-side,#ffffff 0 58%,rgba(255,255,255,0) 100%)}
+.now .pin.clear svg{width:16px;height:16px}
+
+/* 01 — то же пятно, но цветом поверхности */
+.tone .veil{top:-7px;right:-7px;width:56px;height:56px;
+  background:radial-gradient(closest-side,var(--fill) 0 56%,
+    color-mix(in srgb,var(--fill) 0%,transparent) 100%)}
+
+/* 02 — пятно плюс подсветка под курсором */
+.chip .veil{top:-7px;right:-7px;width:56px;height:56px;
+  background:radial-gradient(closest-side,var(--fill) 0 56%,
+    color-mix(in srgb,var(--fill) 0%,transparent) 100%)}
+.chip .pin:hover{background:color-mix(in srgb,var(--text) 6%,transparent)}
+.chip .pin:active{background:color-mix(in srgb,var(--text) 10%,transparent)}
+
+/* 03 — полоса сверху вместо пятна */
+.strip .veil{left:0;right:0;top:0;height:46px;
+  background:linear-gradient(to bottom,var(--fill) 0,var(--fill) 26px,
+    color-mix(in srgb,var(--fill) 50%,transparent) 36px,
+    color-mix(in srgb,var(--fill) 0%,transparent) 100%)}
+.strip .pin{top:3px}
+.strip .pin:hover{background:color-mix(in srgb,var(--text) 6%,transparent)}
+
+/* 04 — кнопка приходит по наведению, пятно вместе с ней */
+.quiet .veil{top:-7px;right:-7px;width:56px;height:56px;opacity:0;
+  transition:opacity .16s ease;
+  background:radial-gradient(closest-side,var(--fill) 0 56%,
+    color-mix(in srgb,var(--fill) 0%,transparent) 100%)}
+.quiet .pin{opacity:0;transition:opacity .16s ease}
+.quiet .field:hover .veil,.quiet .field:hover .pin,
+.quiet .pin:focus-visible,.quiet .field:focus-within .pin{opacity:1}
+.quiet .pin:hover{background:color-mix(in srgb,var(--text) 6%,transparent)}
+
+/* --- ряд сравнения иконок ------------------------------------------------ */
+.icons{display:flex;gap:10px;flex-wrap:wrap;margin-top:.4rem}
+.swatch{width:120px;border:1px solid var(--line);border-radius:10px;overflow:hidden;
+  background:var(--window)}
+.swatch .top{height:56px;display:flex;align-items:center;justify-content:center;
+  background:var(--sw,#fff);color:var(--text-soft)}
+.swatch .top svg{width:15px;height:15px}
+.swatch .cap{font:500 10px/1.3 var(--ui);color:var(--text-faint);padding:6px 8px;
+  border-top:1px solid var(--line);text-align:center}
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>Одна кнопка на двух поверхностях</h1>
+<p class="lede">Сейчас пятно под кнопкой рисуется системным материалом, а он всегда
+почти белый: на белом поле расшифровки его не видно, на сером готовом тексте и в
+истории он светлее фона и лезет в глаза. Ниже — <b>то же пятно, но цветом самой
+поверхности</b>, и три способа сделать его ещё тише. Поля живые: прокрути любое и
+наведи курсор.</p>
+
+<div class="grid">
+
+  <!-- 00 -->
+  <section class="card now">
+    <div class="card-head"><span class="num">00</span><h2>Как сейчас</h2></div>
+    <p class="about">Пятно белое независимо от поля. На белом — незаметно, на сером —
+      светлый круг. Плюс иконки разного веса: сплошной диск против тонкого контура.</p>
+    <div class="pair">
+      <div class="mock">
+        <div class="field-head"><span class="label">Расшифровка</span><span class="meta">646 знаков</span></div>
+        <div class="field focused">
+          <div class="scroll" data-text></div>
+          <span class="veil"></span>
+          <button class="pin clear" type="button" aria-label="Очистить текст">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm3.7 12.3a1 1 0 0 1-1.4 1.4L12 13.4l-2.3 2.3a1 1 0 0 1-1.4-1.4l2.3-2.3-2.3-2.3a1 1 0 1 1 1.4-1.4l2.3 2.3 2.3-2.3a1 1 0 0 1 1.4 1.4L13.4 12l2.3 2.3Z"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="mock">
+        <div class="field-head"><span class="label">Готовый текст</span></div>
+        <div class="field result">
+          <div class="scroll" data-text></div>
+          <span class="veil"></span>
+          <button class="pin" type="button" aria-label="Скопировать">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="8" y="8" width="12" height="12" rx="2.4"/><path d="M16 8V6.4A2.4 2.4 0 0 0 13.6 4H6.4A2.4 2.4 0 0 0 4 6.4v7.2A2.4 2.4 0 0 0 6.4 16H8"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+    <p class="trade"><b>Диагноз:</b> материал подмешивает свой тон, а не берёт фон поля.</p>
+  </section>
+
+  <!-- 01 -->
+  <section class="card tone">
+    <div class="card-head"><span class="num">01</span><h2>Пятно цветом поверхности</h2></div>
+    <p class="about">Единственная правка: пятно рисуется тем же цветом, что и поле, —
+      белым на расшифровке, серым на готовом тексте. Края растворяются, границы нет,
+      строка под кнопкой не обрывается. Иконки приведены к одному весу: обе контурные.</p>
+    <div class="pair">
+      <div class="mock">
+        <div class="field-head"><span class="label">Расшифровка</span><span class="meta">646 знаков</span></div>
+        <div class="field focused">
+          <div class="scroll" data-text></div>
+          <span class="veil"></span>
+          <button class="pin" type="button" aria-label="Очистить текст">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="mock">
+        <div class="field-head"><span class="label">Готовый текст</span></div>
+        <div class="field result">
+          <div class="scroll" data-text></div>
+          <span class="veil"></span>
+          <button class="pin" type="button" aria-label="Скопировать">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="8" y="8" width="12" height="12" rx="2.4"/><path d="M16 8V6.4A2.4 2.4 0 0 0 13.6 4H6.4A2.4 2.4 0 0 0 4 6.4v7.2A2.4 2.4 0 0 0 6.4 16H8"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+    <p class="trade"><b>За:</b> оба поля выглядят одинаково, эффекта не видно вовсе.
+      <b>Против:</b> при наведении не меняется ничего, кроме цвета иконки, — отклик слабоват.</p>
+  </section>
+
+  <!-- 02 -->
+  <section class="card chip">
+    <div class="card-head"><span class="num">02</span><h2>Пятно плюс подсветка под курсором</h2></div>
+    <p class="about">То же пятно, но под курсором проступает мягкий квадрат со скруглением —
+      тот же отклик, что у кнопок истории и настроек в шапке. В покое поле чистое.</p>
+    <div class="pair">
+      <div class="mock">
+        <div class="field-head"><span class="label">Расшифровка</span><span class="meta">646 знаков</span></div>
+        <div class="field focused">
+          <div class="scroll" data-text></div>
+          <span class="veil"></span>
+          <button class="pin" type="button" aria-label="Очистить текст">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="mock">
+        <div class="field-head"><span class="label">Готовый текст</span></div>
+        <div class="field result">
+          <div class="scroll" data-text></div>
+          <span class="veil"></span>
+          <button class="pin" type="button" aria-label="Скопировать">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="8" y="8" width="12" height="12" rx="2.4"/><path d="M16 8V6.4A2.4 2.4 0 0 0 13.6 4H6.4A2.4 2.4 0 0 0 4 6.4v7.2A2.4 2.4 0 0 0 6.4 16H8"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+    <p class="trade"><b>За:</b> один язык отклика со всем остальным интерфейсом.
+      <b>Против:</b> на долю секунды появляется форма, которой в покое нет.</p>
+  </section>
+
+  <!-- 03 -->
+  <section class="card strip">
+    <div class="card-head"><span class="num">03</span><h2>Полоса сверху вместо пятна</h2></div>
+    <p class="about">Гасится не круг под кнопкой, а вся верхняя полоса поля — цветом
+      поверхности, с растворением вниз. Уезжающая строка не проваливается в круглую
+      дырку, а ровно тает по всей ширине.</p>
+    <div class="pair">
+      <div class="mock">
+        <div class="field-head"><span class="label">Расшифровка</span><span class="meta">646 знаков</span></div>
+        <div class="field focused">
+          <div class="scroll" data-text></div>
+          <span class="veil"></span>
+          <button class="pin" type="button" aria-label="Очистить текст">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="mock">
+        <div class="field-head"><span class="label">Готовый текст</span></div>
+        <div class="field result">
+          <div class="scroll" data-text></div>
+          <span class="veil"></span>
+          <button class="pin" type="button" aria-label="Скопировать">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="8" y="8" width="12" height="12" rx="2.4"/><path d="M16 8V6.4A2.4 2.4 0 0 0 13.6 4H6.4A2.4 2.4 0 0 0 4 6.4v7.2A2.4 2.4 0 0 0 6.4 16H8"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+    <p class="trade"><b>За:</b> прокрутка выглядит опрятнее всего, край текста ровный.
+      <b>Против:</b> первая строка чуть притушена даже там, где прокручивать нечего.</p>
+  </section>
+
+  <!-- 04 -->
+  <section class="card quiet">
+    <div class="card-head"><span class="num">04</span><h2>Кнопка и пятно приходят по наведению</h2></div>
+    <p class="about">В покое поле — только текст, ни иконки, ни пятна. Наведи курсор на
+      поле: появится и то и другое. Самый тихий вариант и самый рискованный.</p>
+    <div class="pair">
+      <div class="mock">
+        <div class="field-head"><span class="label">Расшифровка</span><span class="meta">646 знаков</span></div>
+        <div class="field focused">
+          <div class="scroll" data-text></div>
+          <span class="veil"></span>
+          <button class="pin" type="button" aria-label="Очистить текст">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="mock">
+        <div class="field-head"><span class="label">Готовый текст</span></div>
+        <div class="field result">
+          <div class="scroll" data-text></div>
+          <span class="veil"></span>
+          <button class="pin" type="button" aria-label="Скопировать">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="8" y="8" width="12" height="12" rx="2.4"/><path d="M16 8V6.4A2.4 2.4 0 0 0 13.6 4H6.4A2.4 2.4 0 0 0 4 6.4v7.2A2.4 2.4 0 0 0 6.4 16H8"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+    <p class="trade"><b>За:</b> в покое ничего лишнего вообще.
+      <b>Против:</b> скопировать и очистить нельзя, пока не найдёшь кнопку наугад.</p>
+  </section>
+
+  <!-- иконки -->
+  <section class="card wide">
+    <div class="card-head"><span class="num">05</span><h2>Вес иконок</h2></div>
+    <p class="about">Отдельно от подложки: сейчас очистка нарисована сплошной заливкой,
+      а копирование — контуром той же толщины, что в шапке. На одном экране это читается
+      как два разных класса кнопок. Слева — как сейчас, справа — приведённые к одному весу.</p>
+    <div class="icons">
+      <div class="swatch"><div class="top" style="--sw:#fff">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm3.7 12.3a1 1 0 0 1-1.4 1.4L12 13.4l-2.3 2.3a1 1 0 0 1-1.4-1.4l2.3-2.3-2.3-2.3a1 1 0 1 1 1.4-1.4l2.3 2.3 2.3-2.3a1 1 0 0 1 1.4 1.4L13.4 12l2.3 2.3Z"/></svg>
+      </div><div class="cap">сейчас: очистка</div></div>
+      <div class="swatch"><div class="top" style="--sw:#f4f5f3">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="8" y="8" width="12" height="12" rx="2.4"/><path d="M16 8V6.4A2.4 2.4 0 0 0 13.6 4H6.4A2.4 2.4 0 0 0 4 6.4v7.2A2.4 2.4 0 0 0 6.4 16H8"/></svg>
+      </div><div class="cap">сейчас: копирование</div></div>
+      <div class="swatch"><div class="top" style="--sw:#fff">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/></svg>
+      </div><div class="cap">контур: очистка</div></div>
+      <div class="swatch"><div class="top" style="--sw:#f4f5f3">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="8" y="8" width="12" height="12" rx="2.4"/><path d="M16 8V6.4A2.4 2.4 0 0 0 13.6 4H6.4A2.4 2.4 0 0 0 4 6.4v7.2A2.4 2.4 0 0 0 6.4 16H8"/></svg>
+      </div><div class="cap">контур: копирование</div></div>
+      <div class="swatch"><div class="top" style="--sw:#f4f5f3;color:#28715a">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
+      </div><div class="cap">после копирования</div></div>
+    </div>
+    <p class="trade"><b>Предложение:</b> `xmark.circle` вместо `xmark.circle.fill`, обе иконки
+      13 pt, вес `.regular`, один и тот же цвет покоя и наведения.</p>
+  </section>
+
+</div>
+</div>
+
+<script>
+const SAMPLE = [
+  "Слушай, я тут подумал, что нам с тобой нужно сделать ресерч на тему того, как мы организуем биллинг.",
+  "Мы уже исследовали путь пользователя: как он будет всё это оплачивать, какие сервисы можно подключить. Но мы не знаем, как реализовать это через LiteLLM.",
+  "Надо это исследовать, поковыряться в документации, подумать, нужно ли нам будет делать отдельную страницу для биллинга и можно ли обойтись тем, что уже есть.",
+  "И ещё: пусть решение будет спокойным, чтобы выглядело так, будто так и было задумано с самого начала."
+].join("\n\n");
+
+document.querySelectorAll("[data-text]").forEach(node => {
+  SAMPLE.split("\n\n").forEach(paragraph => {
+    const p = document.createElement("p");
+    p.textContent = paragraph;
+    node.appendChild(p);
+  });
+});
+</script>
+</body>
+</html>

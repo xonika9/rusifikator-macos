@@ -227,7 +227,10 @@ struct HistoryView: View {
     }
 
     private func copyButton(for entry: HistoryEntry) -> some View {
-        CopyTextButton(isConfirming: copiedEntryID == entry.id) {
+        CopyTextButton(
+            isConfirming: copiedEntryID == entry.id,
+            surface: AppTheme.raised
+        ) {
             copy(entry)
         }
         .accessibilityHint("Копирует готовый текст этой обработки")
@@ -352,8 +355,12 @@ struct HistoryDetailView: View {
             )
         )
         .overlay(alignment: .topTrailing) {
-            CopyTextButton(isConfirming: copied, action: copy)
-                .padding(TextSurfaceAccessory.inset)
+            CopyTextButton(
+                isConfirming: copied,
+                surface: AppTheme.surface,
+                action: copy
+            )
+            .padding(TextSurfaceAccessory.inset)
         }
         .background(AppTheme.surface)
         .clipShape(RoundedRectangle(cornerRadius: 8))
