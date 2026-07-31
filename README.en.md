@@ -1,4 +1,8 @@
 <p align="center">
+  <img src="assets/rusifikator-hero.jpg" alt="Rusifikator: from a raw transcript to clean Russian prose" width="100%">
+</p>
+
+<p align="center">
   Language: <a href="README.md">Русский</a> · <strong>English</strong>
 </p>
 

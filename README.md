@@ -1,4 +1,8 @@
 <p align="center">
+  <img src="assets/rusifikator-hero.jpg" alt="Русификатор: из «лэу лэу лэу» в чистый русский текст" width="100%">
+</p>
+
+<p align="center">
   Язык: <strong>Русский</strong> · <a href="README.en.md">English</a>
 </p>
 
