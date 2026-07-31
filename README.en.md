@@ -22,6 +22,14 @@ A menu bar utility that turns a raw voice transcript into clean Russian prose. D
 
 > I publish field notes on AI models and developer tooling in [Контролируемые галлюцинации](https://t.me/+DOZWlhI4r4EyYjgy), a Russian-language Telegram channel.
 
+<p align="center">
+  <img src="assets/rusifikator-editor.jpg" alt="The editor window: the transcript on top, the finished text below" width="420">
+</p>
+
+<p align="center">
+  <sub>On top, what the dictation produced. Below, what you can actually send.</sub>
+</p>
+
 ## Installation
 
 Requires macOS 26 or newer on Apple Silicon.
