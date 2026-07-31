@@ -374,7 +374,7 @@ final class EditorViewModelTests: XCTestCase {
         XCTAssertTrue(model.copiedConfirmationVisible)
     }
 
-    // MARK: - Cleanup after a minute of hidden time
+    // MARK: - Cleanup after two minutes of hidden time
 
     func testShortlyHiddenPopoverKeepsEditorContent() {
         let clock = TestClock()
@@ -382,7 +382,7 @@ final class EditorViewModelTests: XCTestCase {
         model.source = "Черновик"
 
         model.popoverDidHide()
-        clock.advance(by: 59)
+        clock.advance(by: 119)
         model.popoverWillShow()
 
         XCTAssertEqual(model.source, "Черновик")
@@ -390,7 +390,7 @@ final class EditorViewModelTests: XCTestCase {
         XCTAssertFalse(model.idleResetIsPending)
     }
 
-    func testMinuteOfHiddenTimeClearsEditorWithoutTouchingHistory() async {
+    func testTwoMinutesOfHiddenTimeClearEditorWithoutTouchingHistory() async {
         let client = ControlledEditorAPIClient()
         let history = HistoryRecorderSpy()
         let clock = TestClock()
@@ -409,7 +409,7 @@ final class EditorViewModelTests: XCTestCase {
         clocked.copyResult()
 
         clocked.popoverDidHide()
-        clock.advance(by: 60)
+        clock.advance(by: 120)
         clocked.popoverWillShow()
 
         XCTAssertEqual(clocked.source, "")
@@ -473,7 +473,7 @@ final class EditorViewModelTests: XCTestCase {
         model.source = "Черновик"
 
         model.popoverDidHide()
-        clock.advance(by: 90)
+        clock.advance(by: 150)
         model.popoverWillShow()
         XCTAssertEqual(model.source, "")
 

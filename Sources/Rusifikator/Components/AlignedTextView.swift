@@ -1,26 +1,36 @@
 import AppKit
 import SwiftUI
 
+/// Кнопка SwiftUI, которая лежит в правом верхнем углу текстового поля.
+///
+/// Само поле её не рисует, но обязано знать её место: под кнопкой находится
+/// `NSTextView`, и без этого он ставит там каретку вместо указателя.
+struct TextAccessoryButton: Equatable {
+    let size: CGSize
+    let inset: CGFloat
+    let isEnabled: Bool
+}
+
 struct AlignedTextView: NSViewRepresentable {
     @Binding var text: String
     @Binding var isFocused: Bool
 
     let placeholder: String
     let isEditable: Bool
-    let trailingAccessorySize: CGSize
+    let trailingAccessoryButton: TextAccessoryButton?
 
     init(
         text: Binding<String>,
         isFocused: Binding<Bool> = .constant(false),
         placeholder: String = "",
         isEditable: Bool = true,
-        trailingAccessorySize: CGSize = .zero
+        trailingAccessoryButton: TextAccessoryButton? = nil
     ) {
         _text = text
         _isFocused = isFocused
         self.placeholder = placeholder
         self.isEditable = isEditable
-        self.trailingAccessorySize = trailingAccessorySize
+        self.trailingAccessoryButton = trailingAccessoryButton
     }
 
     func makeCoordinator() -> Coordinator {
@@ -31,6 +41,7 @@ struct AlignedTextView: NSViewRepresentable {
         let container = AlignedTextContainer()
         container.textView.delegate = context.coordinator
         context.coordinator.placeholderLabel = container.placeholderLabel
+        context.coordinator.container = container
         configureStaticProperties(container)
         updateDynamicProperties(container)
         return container
@@ -44,6 +55,7 @@ struct AlignedTextView: NSViewRepresentable {
         if container.textView.string != text {
             container.textView.string = text
             container.textView.undoManager?.removeAllActions()
+            container.layOutWholeText()
         }
 
         guard isEditable, let window = container.window else {
@@ -68,7 +80,7 @@ struct AlignedTextView: NSViewRepresentable {
 
     private func updateDynamicProperties(_ container: AlignedTextContainer) {
         let textView = container.textView
-        container.trailingAccessorySize = trailingAccessorySize
+        container.trailingAccessoryButton = trailingAccessoryButton
         if textView.isEditable != isEditable {
             textView.isEditable = isEditable
         }
@@ -84,6 +96,7 @@ struct AlignedTextView: NSViewRepresentable {
         var text: Binding<String>
         var isFocused: Binding<Bool>
         weak var placeholderLabel: NSTextField?
+        weak var container: AlignedTextContainer?
 
         init(text: Binding<String>, isFocused: Binding<Bool>) {
             self.text = text
@@ -96,6 +109,10 @@ struct AlignedTextView: NSViewRepresentable {
             }
             text.wrappedValue = textView.string
             placeholderLabel?.isHidden = !textView.string.isEmpty
+
+            // Вставка большого текста приходит сюда, а не через обновление
+            // связанного значения: ползунок должен сразу знать полный объём.
+            container?.layOutWholeText()
         }
 
         func textDidBeginEditing(_ notification: Notification) {
@@ -110,22 +127,33 @@ struct AlignedTextView: NSViewRepresentable {
 
 final class AlignedTextContainer: NSView {
     let scrollView = NSScrollView()
-    let textView = NSTextView()
+    let textView = AccessoryAwareTextView()
     let placeholderLabel = PassthroughLabel(labelWithString: "")
+    private let accessoryCursorView = AccessoryCursorView()
 
-    var trailingAccessorySize = CGSize.zero {
+    var trailingAccessoryButton: TextAccessoryButton? {
         didSet {
-            guard trailingAccessorySize != oldValue else {
+            guard trailingAccessoryButton != oldValue else {
                 return
             }
-            scrollView.scrollerInsets = NSEdgeInsets(
-                top: trailingAccessorySize.height,
-                left: 0,
-                bottom: 0,
-                right: 0
-            )
+            updateScrollerInsets()
             needsLayout = true
         }
+    }
+
+    /// Место кнопки в координатах поля, если она есть.
+    var accessoryButtonFrame: NSRect? {
+        guard let button = trailingAccessoryButton,
+              button.size.width > 0,
+              button.size.height > 0 else {
+            return nil
+        }
+        return NSRect(
+            x: bounds.maxX - button.inset - button.size.width,
+            y: bounds.maxY - button.inset - button.size.height,
+            width: button.size.width,
+            height: button.size.height
+        )
     }
 
     override init(frame frameRect: NSRect) {
@@ -151,6 +179,7 @@ final class AlignedTextContainer: NSView {
             height: CGFloat.greatestFiniteMagnitude
         )
         scrollView.documentView = textView
+        textView.accessoryHost = self
 
         placeholderLabel.translatesAutoresizingMaskIntoConstraints = false
         placeholderLabel.lineBreakMode = .byTruncatingTail
@@ -158,6 +187,11 @@ final class AlignedTextContainer: NSView {
 
         addSubview(scrollView)
         addSubview(placeholderLabel)
+
+        // Область указателя лежит выше текста: из перекрывающихся областей
+        // курсора система берёт ту, что принадлежит верхнему представлению.
+        accessoryCursorView.isHidden = true
+        addSubview(accessoryCursorView)
 
         NSLayoutConstraint.activate([
             scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -178,37 +212,131 @@ final class AlignedTextContainer: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    override func layout() {
-        super.layout()
-        updateTextExclusionPath()
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        window?.invalidateCursorRects(for: accessoryCursorView)
     }
 
-    private func updateTextExclusionPath() {
-        guard let textContainer = textView.textContainer else {
-            return
-        }
-        guard trailingAccessorySize.width > 0, trailingAccessorySize.height > 0 else {
-            if !textContainer.exclusionPaths.isEmpty {
-                textContainer.exclusionPaths = []
-            }
-            return
-        }
+    private var laidOutWidth: CGFloat = -1
 
-        let containerWidth = textContainer.size.width
-        guard containerWidth > 0 else {
+    override func layout() {
+        super.layout()
+        updateAccessoryCursorArea()
+
+        // Ширина задаёт переносы строк, поэтому после её изменения весь текст
+        // раскладывается заново. Повторные проходы при той же ширине не нужны
+        // и только зациклили бы раскладку.
+        if bounds.width != laidOutWidth {
+            laidOutWidth = bounds.width
+            layOutWholeText()
+        }
+    }
+
+    /// Полоса прокрутки начинается ниже кнопки: под кнопку она уходить не
+    /// должна, иначе ползунок и иконка налезают друг на друга.
+    private func updateScrollerInsets() {
+        guard let button = trailingAccessoryButton else {
+            scrollView.scrollerInsets = NSEdgeInsets()
             return
         }
-
-        let exclusionWidth = min(trailingAccessorySize.width, containerWidth)
-        let exclusionRect = NSRect(
-            x: containerWidth - exclusionWidth,
-            y: 0,
-            width: exclusionWidth,
-            height: trailingAccessorySize.height
+        scrollView.scrollerInsets = NSEdgeInsets(
+            top: button.inset * 2 + button.size.height,
+            left: 0,
+            bottom: 0,
+            right: 0
         )
-        if textContainer.exclusionPaths.first?.bounds != exclusionRect {
-            textContainer.exclusionPaths = [NSBezierPath(rect: exclusionRect)]
+    }
+
+    private func updateAccessoryCursorArea() {
+        guard let frame = accessoryButtonFrame else {
+            accessoryCursorView.isHidden = true
+            return
         }
+        accessoryCursorView.isHidden = false
+        accessoryCursorView.frame = frame
+        accessoryCursorView.cursor =
+            trailingAccessoryButton?.isEnabled == true ? .pointingHand : .arrow
+        window?.invalidateCursorRects(for: accessoryCursorView)
+    }
+
+    /// Раскладывает весь текст, а не только видимую часть.
+    ///
+    /// По умолчанию раскладка ленивая: высота документа растёт по мере
+    /// прокрутки, поэтому ползунок сначала выглядит длиннее, чем должен, и
+    /// уменьшается на ходу. После полной раскладки он сразу показывает
+    /// настоящий объём текста.
+    func layOutWholeText() {
+        if let layoutManager = textView.textLayoutManager {
+            layoutManager.ensureLayout(for: layoutManager.documentRange)
+            return
+        }
+        if let layoutManager = textView.layoutManager,
+           let textContainer = textView.textContainer {
+            layoutManager.ensureLayout(for: textContainer)
+        }
+    }
+}
+
+/// Прозрачная площадка под кнопкой, которая владеет только курсором.
+///
+/// Кнопку рисует и обрабатывает SwiftUI выше, поэтому нажатия сюда не
+/// заходят: `hitTest` пропускает их дальше.
+final class AccessoryCursorView: NSView {
+    var cursor: NSCursor = .pointingHand {
+        didSet {
+            guard cursor !== oldValue else {
+                return
+            }
+            window?.invalidateCursorRects(for: self)
+        }
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: cursor)
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+}
+
+/// Текстовое поле, которое уступает угол с кнопкой.
+///
+/// Каретку над текстом `NSTextView` ставит и по областям курсора, и на каждом
+/// движении мыши. Второй путь перебивает любые чужие области, поэтому поле
+/// должно уступать угол с кнопкой само.
+final class AccessoryAwareTextView: NSTextView {
+    weak var accessoryHost: AlignedTextContainer?
+
+    override func mouseMoved(with event: NSEvent) {
+        guard applyAccessoryCursor(for: event) else {
+            super.mouseMoved(with: event)
+            return
+        }
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        guard applyAccessoryCursor(for: event) else {
+            super.cursorUpdate(with: event)
+            return
+        }
+    }
+
+    private func applyAccessoryCursor(for event: NSEvent) -> Bool {
+        guard let host = accessoryHost,
+              let frame = host.accessoryButtonFrame else {
+            return false
+        }
+        let point = host.convert(event.locationInWindow, from: nil)
+        guard frame.contains(point) else {
+            return false
+        }
+        if host.trailingAccessoryButton?.isEnabled == true {
+            NSCursor.pointingHand.set()
+        } else {
+            NSCursor.arrow.set()
+        }
+        return true
     }
 }
 

@@ -502,7 +502,7 @@ struct SettingsView: View {
                     updatePanel
 
                 }
-                .padding(.top, 14)
+                .padding(.top, PopoverLayout.contentTopInset)
                 .padding(.horizontal, 16)
                 .padding(.bottom, 12)
             }
@@ -528,18 +528,10 @@ struct SettingsView: View {
     }
 
     private var toolbar: some View {
-        ZStack {
-            VStack(spacing: 1) {
-                Text("Настройки")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(AppTheme.text)
-
-                Text("OpenAI-совместимый API")
-                    .font(.system(size: 10))
-                    .foregroundStyle(AppTheme.textFaint)
-            }
-
-            HStack {
+        ScreenHeader(
+            title: "Настройки",
+            subtitle: "OpenAI-совместимый API",
+            leading: {
                 Button {
                     model.discardDraftChanges()
                     close()
@@ -547,21 +539,13 @@ struct SettingsView: View {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 14, weight: .medium))
                         .frame(width: 30, height: 30)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(QuietIconButtonStyle())
                 .help("Вернуться к тексту")
                 .accessibilityLabel("Вернуться к тексту")
-
-                Spacer()
             }
-            .padding(.horizontal, 10)
-        }
-        .frame(height: 46)
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(AppTheme.text.opacity(0.08))
-                .frame(height: 1)
-        }
+        )
     }
 
     private func fieldGroup<Content: View>(
@@ -868,6 +852,7 @@ private struct SettingsSecondaryButtonStyle: ButtonStyle {
                 RoundedRectangle(cornerRadius: 7)
                     .stroke(AppTheme.lineStrong, lineWidth: 1)
             }
+            .pointerStyle(.link)
     }
 }
 
@@ -883,5 +868,6 @@ private struct SettingsSaveButtonStyle: ButtonStyle {
                 in: RoundedRectangle(cornerRadius: 7)
             )
             .offset(y: configuration.isPressed ? 1 : 0)
+            .pointerStyle(.link)
     }
 }

@@ -79,7 +79,7 @@ final class EditorViewModel {
 
     /// How long the popover has to stay closed before the next opening starts
     /// from a clean editor.
-    static let idleResetInterval: TimeInterval = 60
+    static let idleResetInterval: TimeInterval = 120
 
     init(
         apiClient: any EditorAPIClient = OpenAIEditorAPIClient(),

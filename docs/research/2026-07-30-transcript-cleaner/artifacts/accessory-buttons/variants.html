@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>«Русификатор» — кнопки очистки и копирования</title>
+<style>
+:root{
+  --canvas:#f3f0e8; --canvas-line:#d8d2c6;
+  --window:#fcfcfb; --surface:#f4f5f3; --raised:#ffffff;
+  --text:#1d211f; --text-soft:#626864; --text-faint:#858b87;
+  --line:#d9ddd9; --line-strong:#c6cbc7;
+  --accent:#28715a;
+  --ui:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Arial,sans-serif;
+  --mono:"SFMono-Regular",Consolas,monospace;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;background:var(--canvas);color:var(--text);
+  font:14px/1.6 var(--ui);-webkit-font-smoothing:antialiased;
+}
+.page{width:min(1180px,calc(100% - 2.5rem));margin-inline:auto;padding-block:2.5rem 4rem}
+h1{font:600 1.9rem/1.2 var(--ui);margin:0 0 .4rem;letter-spacing:-.01em}
+.lede{color:var(--text-soft);max-width:70ch;margin:0 0 .6rem}
+.hint{color:var(--text-faint);max-width:70ch;margin:0 0 2rem;font-size:.85rem}
+
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1.5rem}
+@media (max-width:960px){.grid{grid-template-columns:1fr}}
+
+.card{
+  background:var(--window);border:1px solid var(--line);border-radius:16px;
+  padding:1.1rem 1.2rem 1.3rem;
+}
+.card-head{display:flex;align-items:baseline;gap:.55rem;margin-bottom:.15rem}
+.num{font:600 .7rem/1 var(--mono);color:var(--text-faint);letter-spacing:.08em}
+.card h2{font:600 1.02rem/1.3 var(--ui);margin:0}
+.card .about{margin:.25rem 0 1rem;font-size:.82rem;line-height:1.5;color:var(--text-soft)}
+.trade{margin:.9rem 0 0;font-size:.78rem;line-height:1.5;color:var(--text-faint)}
+.trade b{color:var(--text-soft);font-weight:600}
+
+/* --- окно приложения --------------------------------------------------- */
+.mock{width:100%;max-width:388px}
+
+.field-head{
+  display:flex;align-items:center;gap:8px;height:22px;margin-bottom:4px;
+}
+.field-head .label{font:600 11px/1 var(--ui);color:var(--text-soft)}
+.field-head .meta{margin-left:auto;font:400 10px/1 var(--ui);color:var(--text-faint);font-variant-numeric:tabular-nums}
+.field-head .head-action{margin-left:auto;display:flex;align-items:center;gap:2px}
+.field-head .meta + .head-action{margin-left:0}
+
+.row{display:flex;align-items:flex-start;gap:6px}
+
+.field{
+  position:relative;height:149px;border:1px solid var(--line);border-radius:8px;
+  background:var(--raised);overflow:hidden;
+}
+.field.result{background:var(--surface);height:118px}
+.field.focused{border-color:var(--accent);box-shadow:0 0 0 .5px var(--accent)}
+
+.scroll{
+  height:100%;overflow-y:auto;padding:9px 10px;
+  font:13px/1.35 var(--ui);color:var(--text);white-space:pre-wrap;
+  scrollbar-width:thin;
+}
+.scroll p{margin:0 0 10px}
+.scroll p:last-child{margin-bottom:0}
+
+/* кнопка-иконка */
+.icon-btn{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:30px;height:30px;padding:0;border:0;border-radius:7px;
+  background:transparent;color:var(--text-soft);cursor:pointer;
+  transition:background-color .12s ease,color .12s ease,opacity .14s ease;
+}
+.icon-btn:hover{background:rgba(29,33,31,.06);color:var(--text)}
+.icon-btn:active{background:rgba(29,33,31,.11)}
+.icon-btn svg{width:15px;height:15px;display:block}
+.icon-btn.small{width:26px;height:26px}
+.icon-btn.small svg{width:14px;height:14px}
+
+.text-btn{
+  display:inline-flex;align-items:center;gap:5px;border:0;background:transparent;
+  padding:0 2px;color:var(--accent);font:600 11px/1 var(--ui);cursor:pointer;
+}
+.text-btn svg{width:13px;height:13px}
+.text-btn:hover{text-decoration:underline}
+
+.pin{position:absolute;top:4px;right:4px}
+
+/* --- 01. в строке заголовка -------------------------------------------- */
+.v1 .pin{display:none}
+
+/* --- 02. своя колонка внутри поля --------------------------------------- */
+.v2 .scroll{padding-right:44px}
+.v2 .pin{top:5px;right:5px}
+.v2 .gutter-line{
+  position:absolute;top:9px;bottom:9px;right:40px;width:1px;background:var(--line);opacity:.7;
+}
+
+/* --- 03. липкая полоса сверху ------------------------------------------ */
+.v3 .veil{
+  position:absolute;left:0;right:0;top:0;height:56px;pointer-events:none;
+  background:linear-gradient(to bottom,
+    var(--fill) 0, var(--fill) 30px, color-mix(in srgb, var(--fill) 55%, transparent) 42px, transparent 100%);
+}
+.v3 .field{--fill:#ffffff}
+.v3 .field.result{--fill:#f4f5f3}
+.v3 .pin{top:3px;right:5px}
+
+/* --- 04. кнопка снаружи ------------------------------------------------- */
+.v4 .mock .row .field{flex:1;min-width:0}
+.v4 .side{display:flex;flex-direction:column;align-items:center;padding-top:1px}
+.v4 .pin{display:none}
+
+/* --- 05. по наведению --------------------------------------------------- */
+.v5 .pin{opacity:0}
+.v5 .field:hover .pin{opacity:1}
+.v5 .field.scrolling .pin{opacity:0}
+.v5 .pin{background:transparent}
+
+/* --- 06. блюр под кнопкой ---------------------------------------------- */
+.v6 .field{--fill:#ffffff}
+.v6 .field.result{--fill:#f4f5f3}
+.v6 .blur{
+  position:absolute;top:2px;right:2px;width:34px;height:34px;border-radius:11px;
+  pointer-events:none;
+  -webkit-backdrop-filter:blur(7px) saturate(115%);
+  backdrop-filter:blur(7px) saturate(115%);
+  background:color-mix(in srgb, var(--fill) 55%, transparent);
+  -webkit-mask-image:radial-gradient(closest-side,#000 58%,transparent 100%);
+  mask-image:radial-gradient(closest-side,#000 58%,transparent 100%);
+}
+.v6 .pin{top:4px;right:4px;background:transparent}
+.v6 .pin:hover{background:color-mix(in srgb, var(--fill) 70%, transparent)}
+
+/* --- 07. свечение вокруг иконки ---------------------------------------- */
+.v7 .field{--fill:#ffffff}
+.v7 .field.result{--fill:#f4f5f3}
+.v7 .halo{
+  position:absolute;top:-9px;right:-9px;width:66px;height:66px;pointer-events:none;
+  background:radial-gradient(closest-side,
+    var(--fill) 0%, var(--fill) 42%,
+    color-mix(in srgb, var(--fill) 55%, transparent) 66%,
+    transparent 100%);
+}
+.v7 .pin{top:4px;right:4px;background:transparent}
+.v7 .pin:hover{background:rgba(29,33,31,.06)}
+
+.legend{
+  margin-top:2.5rem;padding:1rem 1.2rem;border:1px solid var(--line);border-radius:14px;
+  background:var(--window);font-size:.85rem;color:var(--text-soft);max-width:70ch;
+}
+.legend h3{margin:0 0 .4rem;font:600 .95rem/1.3 var(--ui);color:var(--text)}
+.legend ul{margin:.3rem 0 0;padding-left:1.1rem}
+.legend li{margin:.2rem 0}
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>Куда девать очистку и копирование</h1>
+<p class="lede">Семь способов ужиться кнопке и тексту в одном поле. Варианты 01–05
+убирают перекрытие совсем, 06 и 07 оставляют кнопку поверх текста и гасят текст
+под ней. Поля живые: прокрути любое, чтобы увидеть, как вариант ведёт себя не в
+начале текста. Размеры, цвета и типографика — те же, что в приложении.</p>
+<p class="hint">Ширина поля 388&nbsp;px, высота 149&nbsp;px, шрифт 13&nbsp;px — как в окне 420&nbsp;px.</p>
+
+<div class="grid">
+
+  <!-- 01 -->
+  <section class="card v1">
+    <div class="card-head"><span class="num">01</span><h2>Действия уходят в строку заголовка</h2></div>
+    <p class="about">Внутри поля не остаётся ничего, кроме текста. Очистка встаёт справа
+      от счётчика знаков, копирование — справа от подписи «Готовый текст».
+      Так было в исходном прототипе.</p>
+
+    <div class="mock">
+      <div class="field-head">
+        <span class="label">Расшифровка</span>
+        <span class="meta">2755 знаков</span>
+        <span class="head-action">
+          <button class="icon-btn small" type="button" aria-label="Очистить текст" title="Очистить текст">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/></svg>
+          </button>
+        </span>
+      </div>
+      <div class="field focused"><div class="scroll" data-text></div></div>
+
+      <div class="field-head" style="margin-top:12px">
+        <span class="label">Готовый текст</span>
+        <span class="head-action">
+          <button class="text-btn" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>
+            Скопировать
+          </button>
+        </span>
+      </div>
+      <div class="field result"><div class="scroll" data-text></div></div>
+    </div>
+
+    <p class="trade"><b>За:</b> текст никогда ничем не перекрыт, кнопка всегда на одном месте.
+      <b>Против:</b> действие дальше от текста, а строка заголовка становится плотнее.</p>
+  </section>
+
+  <!-- 02 -->
+  <section class="card v2">
+    <div class="card-head"><span class="num">02</span><h2>Своя колонка внутри поля</h2></div>
+    <p class="about">Справа внутри рамки постоянный жёлоб 40&nbsp;px: текст туда не заходит
+      никогда, там же живёт полоса прокрутки. Обтекания нет — просто более узкая
+      колонка текста.</p>
+
+    <div class="mock">
+      <div class="field-head"><span class="label">Расшифровка</span><span class="meta">2755 знаков</span></div>
+      <div class="field focused">
+        <div class="scroll" data-text></div>
+        <span class="gutter-line"></span>
+        <button class="icon-btn pin" type="button" aria-label="Очистить текст" title="Очистить текст">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/></svg>
+        </button>
+      </div>
+
+      <div class="field-head" style="margin-top:12px"><span class="label">Готовый текст</span></div>
+      <div class="field result">
+        <div class="scroll" data-text></div>
+        <span class="gutter-line"></span>
+        <button class="icon-btn pin" type="button" aria-label="Скопировать" title="Скопировать">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <p class="trade"><b>За:</b> честная геометрия, ни одного случая перекрытия, поведение
+      не зависит от прокрутки. <b>Против:</b> строка текста короче на 40&nbsp;px, и в
+      колонке много пустоты.</p>
+  </section>
+
+  <!-- 03 -->
+  <section class="card v3">
+    <div class="card-head"><span class="num">03</span><h2>Текст растворяется под верхней полосой</h2></div>
+    <p class="about">Кнопка лежит в верхней полосе поля, а текст под ней не обрывается,
+      а плавно растворяется в цвете поверхности. Обтекания нет: строки идут во всю
+      ширину.</p>
+
+    <div class="mock">
+      <div class="field-head"><span class="label">Расшифровка</span><span class="meta">2755 знаков</span></div>
+      <div class="field focused">
+        <div class="scroll" data-text></div>
+        <span class="veil"></span>
+        <button class="icon-btn pin" type="button" aria-label="Очистить текст" title="Очистить текст">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/></svg>
+        </button>
+      </div>
+
+      <div class="field-head" style="margin-top:12px"><span class="label">Готовый текст</span></div>
+      <div class="field result">
+        <div class="scroll" data-text></div>
+        <span class="veil"></span>
+        <button class="icon-btn pin" type="button" aria-label="Скопировать" title="Скопировать">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <p class="trade"><b>За:</b> ширина текста сохраняется, кнопка рядом с ним, обрыва строки
+      нет. <b>Против:</b> первая строка всегда чуть притушена, даже когда прокрутки нет.</p>
+  </section>
+
+  <!-- 04 -->
+  <section class="card v4">
+    <div class="card-head"><span class="num">04</span><h2>Кнопка снаружи, поле остаётся полем</h2></div>
+    <p class="about">Кнопка выносится за рамку — в узкую колонку справа от поля.
+      Внутри поля вообще нет посторонних элементов, а кнопка стоит вплотную к тому
+      месту, к которому относится.</p>
+
+    <div class="mock">
+      <div class="field-head"><span class="label">Расшифровка</span><span class="meta">2755 знаков</span></div>
+      <div class="row">
+        <div class="field focused"><div class="scroll" data-text></div></div>
+        <span class="side">
+          <button class="icon-btn" type="button" aria-label="Очистить текст" title="Очистить текст">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/></svg>
+          </button>
+        </span>
+      </div>
+
+      <div class="field-head" style="margin-top:12px"><span class="label">Готовый текст</span></div>
+      <div class="row">
+        <div class="field result"><div class="scroll" data-text></div></div>
+        <span class="side">
+          <button class="icon-btn" type="button" aria-label="Скопировать" title="Скопировать">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>
+          </button>
+        </span>
+      </div>
+    </div>
+
+    <p class="trade"><b>За:</b> поле снова читается как чистый прямоугольник текста,
+      перекрытий нет в принципе. <b>Против:</b> окно шириной 420&nbsp;px отдаёт 36&nbsp;px
+      под колонку, поля текста смещаются влево.</p>
+  </section>
+
+  <!-- 05 -->
+  <section class="card v5">
+    <div class="card-head"><span class="num">05</span><h2>Кнопка приходит по наведению</h2></div>
+    <p class="about">Пока курсор не над полем, кнопки нет совсем. При наведении она
+      появляется, при прокрутке — прячется. Наведи курсор на поле, потом прокрути.</p>
+
+    <div class="mock">
+      <div class="field-head"><span class="label">Расшифровка</span><span class="meta">2755 знаков</span></div>
+      <div class="field focused">
+        <div class="scroll" data-text></div>
+        <button class="icon-btn pin" type="button" aria-label="Очистить текст" title="Очистить текст">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/></svg>
+        </button>
+      </div>
+
+      <div class="field-head" style="margin-top:12px"><span class="label">Готовый текст</span></div>
+      <div class="field result">
+        <div class="scroll" data-text></div>
+        <button class="icon-btn pin" type="button" aria-label="Скопировать" title="Скопировать">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <p class="trade"><b>За:</b> в покое поле абсолютно чистое, ширина текста полная.
+      <b>Против:</b> действие невидимо, пока его не ищешь; с клавиатуры и для
+      голосового доступа нужен отдельный путь.</p>
+  </section>
+
+  <!-- 06 -->
+  <section class="card v6">
+    <div class="card-head"><span class="num">06</span><h2>Кнопка размывает текст под собой</h2></div>
+    <p class="about">Кнопка остаётся на месте и перекрывает текст, но под ней —
+      размытие поверхности с растворяющимся краем. Обтекания нет: строка идёт во всю
+      ширину и уходит под кнопку размытой, а не обрезанной.</p>
+
+    <div class="mock">
+      <div class="field-head"><span class="label">Расшифровка</span><span class="meta">2755 знаков</span></div>
+      <div class="field focused">
+        <div class="scroll" data-text></div>
+        <span class="blur"></span>
+        <button class="icon-btn pin" type="button" aria-label="Очистить текст" title="Очистить текст">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/></svg>
+        </button>
+      </div>
+
+      <div class="field-head" style="margin-top:12px"><span class="label">Готовый текст</span></div>
+      <div class="field result">
+        <div class="scroll" data-text></div>
+        <span class="blur"></span>
+        <button class="icon-btn pin" type="button" aria-label="Скопировать" title="Скопировать">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <p class="trade"><b>За:</b> полная ширина текста, кнопка на своём месте, жёсткой
+      границы нет ни при какой прокрутке. <b>Против:</b> под кнопкой видно, что текст
+      есть, но прочитать его нельзя — размытие само по себе заметный эффект.</p>
+  </section>
+
+  <!-- 07 -->
+  <section class="card v7">
+    <div class="card-head"><span class="num">07</span><h2>Иконка в мягком свечении поверхности</h2></div>
+    <p class="about">Ни плиты, ни рамки: вокруг иконки поверхность просто становится
+      плотнее и гасит текст, а к краям сходит на нет. Границы у подложки нет вообще,
+      поэтому строка не обрывается.</p>
+
+    <div class="mock">
+      <div class="field-head"><span class="label">Расшифровка</span><span class="meta">2755 знаков</span></div>
+      <div class="field focused">
+        <div class="scroll" data-text></div>
+        <span class="halo"></span>
+        <button class="icon-btn pin" type="button" aria-label="Очистить текст" title="Очистить текст">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/></svg>
+        </button>
+      </div>
+
+      <div class="field-head" style="margin-top:12px"><span class="label">Готовый текст</span></div>
+      <div class="field result">
+        <div class="scroll" data-text></div>
+        <span class="halo"></span>
+        <button class="icon-btn pin" type="button" aria-label="Скопировать" title="Скопировать">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <p class="trade"><b>За:</b> самый тихий из всех: нет ни рамки, ни плиты, ни тени —
+      только чуть более плотная поверхность. <b>Против:</b> строка рядом с иконкой
+      теряет несколько слов, и понять, что там был текст, труднее.</p>
+  </section>
+
+</div>
+
+<div class="legend">
+  <h3>Что здесь важно сравнить</h3>
+  <ul>
+    <li>Как выглядит поле в покое, когда текст короткий и прокрутки нет.</li>
+    <li>Что происходит со строкой, которая уезжает вверх мимо кнопки.</li>
+    <li>Сколько ширины вариант забирает у текста.</li>
+    <li>Понятно ли, что кнопка вообще есть, если её не искать.</li>
+  </ul>
+</div>
+
+</div>
+
+<script>
+const SAMPLE = [
+  "Так, смотри, по интерфейсу у меня накопилось несколько вещей, и я хочу их проговорить сразу, чтобы потом не возвращаться.",
+  "Первое — это кнопки внутри полей. Сейчас, когда текста много и ты начинаешь листать, кнопка очистки и кнопка копирования оказываются прямо поверх строк. Читать в этот момент неудобно, потому что глаз цепляется за иконку, а не за текст.",
+  "Второе — заголовок. На главном экране он одной высоты, а на других почему-то чуть меньше, и при переходе это видно как подёргивание. Хочется, чтобы он стоял намертво и не шевелился вообще.",
+  "Третье — полоса прокрутки. Когда вставляешь длинную расшифровку, она сначала выглядит так, будто текста немного, а потом, пока листаешь, становится всё меньше и меньше. По ней невозможно понять, сколько осталось.",
+  "И последнее. Мне не нужен эффект ради эффекта: пусть решение будет спокойным, чтобы оно выглядело так, как будто так и было задумано с самого начала."
+].join("\n\n");
+
+document.querySelectorAll("[data-text]").forEach(node => {
+  SAMPLE.split("\n\n").forEach(paragraph => {
+    const p = document.createElement("p");
+    p.textContent = paragraph;
+    node.appendChild(p);
+  });
+});
+
+document.querySelectorAll(".v5 .field").forEach(field => {
+  const scroll = field.querySelector(".scroll");
+  let timer;
+  scroll.addEventListener("scroll", () => {
+    field.classList.add("scrolling");
+    clearTimeout(timer);
+    timer = setTimeout(() => field.classList.remove("scrolling"), 700);
+  });
+});
+</script>
+</body>
+</html>

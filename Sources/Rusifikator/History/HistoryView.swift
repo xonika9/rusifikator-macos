@@ -1,12 +1,30 @@
 import SwiftUI
 
 struct HistoryView: View {
+    private static let previewLineLimit = 3
+    private static let rowSpacing: CGFloat = 8
+    private static let listBottomInset: CGFloat = 10
+
+    /// Все записи должны помещаться на экран целиком, поэтому высота карточки
+    /// выводится из окна, а не подбирается на глаз.
+    private static let rowHeight: CGFloat = {
+        let count = CGFloat(HistoryStore.maximumEntryCount)
+        let free = PopoverLayout.height
+            - PopoverLayout.headerHeight
+            - PopoverLayout.contentTopInset
+            - listBottomInset
+            - rowSpacing * (count - 1)
+        return (free / count).rounded(.down)
+    }()
+
     let history: HistoryStore
     let close: () -> Void
     let openEntry: (HistoryEntry.ID) -> Void
 
     @State private var clearConfirmationVisible = false
     @State private var clearErrorVisible = false
+    @State private var copiedEntryID: HistoryEntry.ID?
+    @State private var copyConfirmationTask: Task<Void, Never>?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -26,16 +44,24 @@ struct HistoryView: View {
                 emptyState
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 8) {
+                    LazyVStack(spacing: Self.rowSpacing) {
                         ForEach(history.entries) { entry in
                             historyRow(entry)
                         }
                     }
-                    .padding(16)
+                    .padding(.top, PopoverLayout.contentTopInset)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, Self.listBottomInset)
                 }
+                // Все записи помещаются на экран, поэтому список не должен
+                // пружинить: прокручивать здесь нечего.
+                .scrollBounceBehavior(.basedOnSize)
             }
         }
         .background(AppTheme.window)
+        .onDisappear {
+            copyConfirmationTask?.cancel()
+        }
         .confirmationDialog(
             "Очистить всю историю?",
             isPresented: $clearConfirmationVisible
@@ -94,48 +120,32 @@ struct HistoryView: View {
     }
 
     private var toolbar: some View {
-        ZStack {
-            VStack(spacing: 1) {
-                Text("История")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(AppTheme.text)
-
-                Text("последние \(HistoryStore.maximumEntryCount) обработок")
-                    .font(.system(size: 10))
-                    .foregroundStyle(AppTheme.textFaint)
+        ScreenHeader(
+            title: "История",
+            subtitle: "последние \(HistoryStore.maximumEntryCount) обработок"
+        ) {
+            Button(action: close) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 14, weight: .medium))
+                    .frame(width: 30, height: 30)
+                    .contentShape(Rectangle())
             }
-
-            HStack {
-                Button(action: close) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 14, weight: .medium))
-                        .frame(width: 30, height: 30)
-                }
-                .buttonStyle(QuietIconButtonStyle())
-                .help("Вернуться к тексту")
-                .accessibilityLabel("Вернуться к тексту")
-
-                Spacer()
-
-                Button {
-                    clearConfirmationVisible = true
-                } label: {
-                    Image(systemName: "trash")
-                        .font(.system(size: 14))
-                        .frame(width: 30, height: 30)
-                }
-                .buttonStyle(QuietIconButtonStyle())
-                .disabled(history.entries.isEmpty)
-                .help("Очистить историю")
-                .accessibilityLabel("Очистить историю")
+            .buttonStyle(QuietIconButtonStyle())
+            .help("Вернуться к тексту")
+            .accessibilityLabel("Вернуться к тексту")
+        } trailing: {
+            Button {
+                clearConfirmationVisible = true
+            } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 14))
+                    .frame(width: 30, height: 30)
+                    .contentShape(Rectangle())
             }
-            .padding(.horizontal, 10)
-        }
-        .frame(height: 46)
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(AppTheme.text.opacity(0.08))
-                .frame(height: 1)
+            .buttonStyle(QuietIconButtonStyle())
+            .disabled(history.entries.isEmpty)
+            .help("Очистить историю")
+            .accessibilityLabel("Очистить историю")
         }
     }
 
@@ -169,7 +179,7 @@ struct HistoryView: View {
         return Button {
             openEntry(entry.id)
         } label: {
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text(date)
                         .font(.system(size: 10, weight: .medium))
@@ -186,13 +196,17 @@ struct HistoryView: View {
                 Text(entry.result)
                     .font(.system(size: 12))
                     .foregroundStyle(AppTheme.text)
-                    .lineLimit(2)
+                    .lineLimit(Self.previewLineLimit)
                     .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(
+                        maxWidth: .infinity,
+                        maxHeight: .infinity,
+                        alignment: .topLeading
+                    )
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .frame(minHeight: 66)
+            .padding(.vertical, 8)
+            .frame(height: Self.rowHeight, alignment: .top)
             .background(AppTheme.raised, in: RoundedRectangle(cornerRadius: 9))
             .overlay {
                 RoundedRectangle(cornerRadius: 9)
@@ -206,6 +220,45 @@ struct HistoryView: View {
             "\(date). \(characterCount). \(preview)"
         )
         .accessibilityHint("Открывает исходный и готовый текст")
+        .overlay(alignment: .trailing) {
+            copyButton(for: entry)
+                .padding(.trailing, TextSurfaceAccessory.inset + 2)
+        }
+    }
+
+    private func copyButton(for entry: HistoryEntry) -> some View {
+        let copied = copiedEntryID == entry.id
+
+        return Button {
+            copy(entry)
+        } label: {
+            Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                .font(.system(size: 13, weight: .medium))
+                .frame(
+                    width: TextSurfaceAccessory.size,
+                    height: TextSurfaceAccessory.size
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(FloatingIconButtonStyle())
+        .help(copied ? "Скопировано" : "Скопировать готовый текст")
+        .accessibilityLabel(
+            copied ? "Скопировано" : "Скопировать готовый текст"
+        )
+        .accessibilityHint("Копирует готовый текст этой обработки")
+    }
+
+    private func copy(_ entry: HistoryEntry) {
+        SystemClipboardService().copy(entry.result)
+        copiedEntryID = entry.id
+        copyConfirmationTask?.cancel()
+        copyConfirmationTask = Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else {
+                return
+            }
+            copiedEntryID = nil
+        }
     }
 
     private func accessibilityPreview(for entry: HistoryEntry) -> String {
@@ -263,37 +316,21 @@ struct HistoryDetailView: View {
     }
 
     private var toolbar: some View {
-        ZStack {
-            VStack(spacing: 1) {
-                Text("Обработка")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(AppTheme.text)
-
-                Text(Self.dateFormatter.string(from: entry.createdAt))
-                    .font(.system(size: 10))
-                    .foregroundStyle(AppTheme.textFaint)
-            }
-
-            HStack {
+        ScreenHeader(
+            title: "Обработка",
+            subtitle: Self.dateFormatter.string(from: entry.createdAt),
+            leading: {
                 Button(action: close) {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 14, weight: .medium))
                         .frame(width: 30, height: 30)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(QuietIconButtonStyle())
                 .help("Вернуться к истории")
                 .accessibilityLabel("Вернуться к истории")
-
-                Spacer()
             }
-            .padding(.horizontal, 10)
-        }
-        .frame(height: 46)
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(AppTheme.text.opacity(0.08))
-                .frame(height: 1)
-        }
+        )
     }
 
     private func sectionTitle(_ title: String) -> some View {
@@ -317,37 +354,43 @@ struct HistoryDetailView: View {
     }
 
     private var resultSurface: some View {
-        HStack(spacing: 0) {
-            AlignedTextView(
-                text: .constant(entry.result),
-                isEditable: false
+        AlignedTextView(
+            text: .constant(entry.result),
+            isEditable: false,
+            trailingAccessoryButton: TextAccessoryButton(
+                size: CGSize(
+                    width: TextSurfaceAccessory.size,
+                    height: TextSurfaceAccessory.size
+                ),
+                inset: TextSurfaceAccessory.inset,
+                isEnabled: true
             )
-
-            VStack {
-                Button {
-                    SystemClipboardService().copy(entry.result)
-                    copied = true
-                    copyConfirmationTask?.cancel()
-                    copyConfirmationTask = Task {
-                        try? await Task.sleep(for: .seconds(1.5))
-                        guard !Task.isCancelled else {
-                            return
-                        }
-                        copied = false
+        )
+        .overlay(alignment: .topTrailing) {
+            Button {
+                SystemClipboardService().copy(entry.result)
+                copied = true
+                copyConfirmationTask?.cancel()
+                copyConfirmationTask = Task {
+                    try? await Task.sleep(for: .seconds(1.5))
+                    guard !Task.isCancelled else {
+                        return
                     }
-                } label: {
-                    Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                        .font(.system(size: 13, weight: .medium))
-                        .frame(width: 34, height: 30)
+                    copied = false
                 }
-                .buttonStyle(QuietIconButtonStyle())
-                .help(copied ? "Скопировано" : "Скопировать готовый текст")
-                .accessibilityLabel(copied ? "Скопировано" : "Скопировать готовый текст")
-
-                Spacer()
+            } label: {
+                Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(
+                        width: TextSurfaceAccessory.size,
+                        height: TextSurfaceAccessory.size
+                    )
+                    .contentShape(Rectangle())
             }
-            .frame(width: 40)
-            .padding(.top, 3)
+            .buttonStyle(FloatingIconButtonStyle())
+            .help(copied ? "Скопировано" : "Скопировать готовый текст")
+            .accessibilityLabel(copied ? "Скопировано" : "Скопировать готовый текст")
+            .padding(TextSurfaceAccessory.inset)
         }
         .background(AppTheme.surface)
         .clipShape(RoundedRectangle(cornerRadius: 8))

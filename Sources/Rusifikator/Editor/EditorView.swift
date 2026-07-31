@@ -2,7 +2,17 @@ import SwiftUI
 
 struct EditorView: View {
     private static let textSurfaceHeight: CGFloat = 149
-    private static let textSurfaceAccessorySize = CGSize(width: 40, height: 36)
+
+    private static func accessoryButton(isEnabled: Bool) -> TextAccessoryButton {
+        TextAccessoryButton(
+            size: CGSize(
+                width: TextSurfaceAccessory.size,
+                height: TextSurfaceAccessory.size
+            ),
+            inset: TextSurfaceAccessory.inset,
+            isEnabled: isEnabled
+        )
+    }
 
     @Bindable var editor: EditorViewModel
     let history: HistoryStore
@@ -24,9 +34,9 @@ struct EditorView: View {
                 resultSurface
                 footer
             }
-            .padding(.top, 8)
+            .padding(.top, PopoverLayout.contentTopInset)
             .padding(.horizontal, 16)
-            .padding(.bottom, 10)
+            .padding(.bottom, 8)
         }
         .background(AppTheme.window)
         .task {
@@ -35,20 +45,10 @@ struct EditorView: View {
     }
 
     private var toolbar: some View {
-        ZStack {
-            VStack(spacing: 1) {
-                Text("Русификатор")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(AppTheme.text)
-
-                Text("готовит текст к отправке")
-                    .font(.system(size: 10))
-                    .foregroundStyle(AppTheme.textFaint)
-            }
-
-            HStack(spacing: 2) {
-                Spacer()
-
+        ScreenHeader(
+            title: "Русификатор",
+            subtitle: "готовит текст к отправке",
+            trailing: {
                 Button(action: openHistory) {
                     Image(systemName: "clock.arrow.circlepath")
                         .font(.system(size: 14))
@@ -70,14 +70,7 @@ struct EditorView: View {
                 .help("Настройки (⌘,)")
                 .accessibilityLabel("Открыть настройки")
             }
-            .padding(.horizontal, 10)
-        }
-        .frame(height: 46)
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(AppTheme.text.opacity(0.08))
-                .frame(height: 1)
-        }
+        )
     }
 
     private var sourceHeader: some View {
@@ -103,7 +96,9 @@ struct EditorView: View {
             isFocused: $sourceIsFocused,
             placeholder: "Вставь сюда надиктованный текст…",
             isEditable: editor.isSourceEditable,
-            trailingAccessorySize: Self.textSurfaceAccessorySize
+            trailingAccessoryButton: editor.source.isEmpty
+                ? nil
+                : Self.accessoryButton(isEnabled: clearIsAvailable)
         )
         .overlay(alignment: .topTrailing) {
             Button {
@@ -112,18 +107,21 @@ struct EditorView: View {
             } label: {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 14))
-                    .frame(width: 34, height: 30)
+                    .frame(
+                        width: TextSurfaceAccessory.size,
+                        height: TextSurfaceAccessory.size
+                    )
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(QuietIconButtonStyle())
-            .disabled(!editor.canClear || !editor.isSourceEditable)
+            .buttonStyle(FloatingIconButtonStyle())
+            .disabled(!clearIsAvailable)
             .opacity(editor.source.isEmpty ? 0 : 1)
             .help("Очистить исходный и готовый текст")
             .accessibilityLabel("Очистить текст")
-            .frame(width: 40)
-            .padding(.top, 3)
+            .padding(TextSurfaceAccessory.inset)
         }
         .frame(height: Self.textSurfaceHeight)
-        .background(editor.isSourceEditable ? AppTheme.raised : AppTheme.surface)
+        .background(sourceSurface)
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay {
             RoundedRectangle(cornerRadius: 8)
@@ -301,7 +299,9 @@ struct EditorView: View {
         AlignedTextView(
             text: .constant(editor.result ?? ""),
             isEditable: false,
-            trailingAccessorySize: Self.textSurfaceAccessorySize
+            trailingAccessoryButton: Self.accessoryButton(
+                isEnabled: editor.canCopy
+            )
         )
         .overlay(alignment: .topTrailing) {
             Button {
@@ -313,9 +313,13 @@ struct EditorView: View {
                         : "doc.on.doc"
                 )
                 .font(.system(size: 13, weight: .medium))
-                .frame(width: 34, height: 30)
+                .frame(
+                    width: TextSurfaceAccessory.size,
+                    height: TextSurfaceAccessory.size
+                )
+                .contentShape(Rectangle())
             }
-            .buttonStyle(QuietIconButtonStyle())
+            .buttonStyle(FloatingIconButtonStyle())
             .disabled(!editor.canCopy)
             .help(
                 editor.copiedConfirmationVisible
@@ -327,8 +331,7 @@ struct EditorView: View {
                     ? "Скопировано"
                     : "Скопировать готовый текст"
             )
-            .frame(width: 40)
-            .padding(.top, 3)
+            .padding(TextSurfaceAccessory.inset)
         }
         .background(AppTheme.surface)
         .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -379,6 +382,17 @@ struct EditorView: View {
         }
     }
 
+    /// Пока идёт обработка, кнопка очистки остаётся на месте, но выключена:
+    /// исчезающая и появляющаяся кнопка дёргает интерфейс сильнее, чем
+    /// неактивная.
+    private var clearIsAvailable: Bool {
+        editor.canClear && editor.isSourceEditable
+    }
+
+    private var sourceSurface: Color {
+        editor.isSourceEditable ? AppTheme.raised : AppTheme.surface
+    }
+
     private var characterCount: String {
         CharacterCountFormatter.string(for: editor.source.count)
     }
@@ -413,6 +427,7 @@ private struct PrototypePrimaryButtonStyle: ButtonStyle {
                 in: RoundedRectangle(cornerRadius: 8)
             )
             .offset(y: configuration.isPressed && enabled ? 1 : 0)
+            .pointerStyle(enabled ? .link : nil)
     }
 
     private var foreground: Color {
@@ -440,18 +455,6 @@ private struct PrototypeErrorLinkStyle: ButtonStyle {
             .foregroundStyle(AppTheme.danger)
             .underline()
             .opacity(configuration.isPressed ? 0.65 : 1)
-    }
-}
-
-struct QuietIconButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .foregroundStyle(
-                configuration.isPressed ? AppTheme.text : AppTheme.textSoft
-            )
-            .background(
-                configuration.isPressed ? AppTheme.surface : .clear,
-                in: RoundedRectangle(cornerRadius: 7)
-            )
+            .pointerStyle(.link)
     }
 }

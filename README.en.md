@@ -57,7 +57,7 @@ From there the loop is simple: paste the transcript, run the cleanup, copy the r
 Two habits worth knowing in advance:
 
 - **One instance per session.** A second launch brings the running copy forward and exits immediately — no second menu bar icon appears.
-- **The editor tidies up after itself.** If the window stayed closed for a minute or longer, the next opening starts with an empty field. History is left alone, and a request that is still running is never interrupted: it finishes and lands in history.
+- **The editor tidies up after itself.** If the window stayed closed for two minutes or longer, the next opening starts with an empty field. History is left alone, and a request that is still running is never interrupted: it finishes and lands in history.
 
 ## Updates
 

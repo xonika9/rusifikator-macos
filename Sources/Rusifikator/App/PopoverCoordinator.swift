@@ -62,7 +62,15 @@ struct PopoverRootView: View {
                 )
             }
         }
-        .frame(width: PopoverLayout.width, height: PopoverLayout.height)
+        // Экраны с содержимым фиксированной высоты не дотягиваются до нижнего
+        // края окна. Без верхнего выравнивания SwiftUI центрирует такой экран,
+        // и панель уезжает вниз на пару точек — на переходах это читается как
+        // прыгающая высота шапки.
+        .frame(
+            width: PopoverLayout.width,
+            height: PopoverLayout.height,
+            alignment: .top
+        )
         .background(AppTheme.window)
     }
 
