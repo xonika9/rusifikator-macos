@@ -3,6 +3,9 @@
 set -euo pipefail
 
 repo_root=${0:A:h:h}
+# Sourced before the argument is read: the shared facts also define app_path,
+# and here the path under test comes first.
+source "${0:A:h}/release-metadata.sh"
 app_path=${1:-"$repo_root/dist/Rusifikator.app"}
 app_path=${app_path:A}
 info_plist="$app_path/Contents/Info.plist"
@@ -93,8 +96,8 @@ feed_url=$("$plist_buddy" -c "Print :SUFeedURL" "$info_plist")
   exit 1
 }
 [[ -n "$("$plist_buddy" -c "Print :SUPublicEDKey" "$info_plist")" ]]
-[[ "$("$plist_buddy" -c "Print :CFBundleShortVersionString" "$info_plist")" == "1.0" ]]
-[[ "$("$plist_buddy" -c "Print :CFBundleVersion" "$info_plist")" == "1.0.0" ]]
+[[ "$("$plist_buddy" -c "Print :CFBundleShortVersionString" "$info_plist")" == "$display_version" ]]
+[[ "$("$plist_buddy" -c "Print :CFBundleVersion" "$info_plist")" == "$canonical_version" ]]
 [[ -d "$app_path/Contents/Frameworks/Sparkle.framework" ]]
 cmp "$repo_root/Tests/Fixtures/ExpectedSystemPrompt.txt" "$prompt"
 [[ -s "$icon" ]]
