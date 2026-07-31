@@ -77,6 +77,8 @@ Publication needs every preparation condition plus explicit publication authorit
 
 Commit the coherent release candidate without absorbing unrelated changes, push it to `main` without force, then create the release for `v<canonical version>` from that commit with `scripts/build-release-artifacts.sh` output attached: the disk image, `appcast.xml` and `SHA256SUMS`. The repository has no release automation, so this skill creates the tag and the GitHub Release itself; if automation is ever added, let it own them and do not create them in parallel.
 
+Name the release `Русификатор <displayed version>` — `Русификатор 1.2` for `1.2 (1.2.0)`. The release list is a public shelf read top to bottom, so the title carries the product name and the version the owner sees, never the canonical version, the tag or a bare number. `scripts/build-release-artifacts.sh` already writes that heading into the release notes and `scripts/make-dmg.sh` into the volume name; read the title from them and from the previous releases instead of inventing one. Verify the published list afterwards: a title that breaks the row of its neighbours is a defect, and it is corrected in place — the title is metadata, not a released artifact.
+
 `appcast.xml` must be attached to every release. The update feed resolves to the newest release, so a release published without it breaks updating for every installed copy.
 
 ## Safety
@@ -92,6 +94,7 @@ When the branch, the remote, the signing key, the checks or the publication rout
 Publication is complete only when all of the following hold, each read from the real artifact rather than from a report:
 
 - the GitHub Release for `v<canonical version>` exists and its tag points at the release commit;
+- its title reads `Русификатор <displayed version>` and stands in one row with the previous releases;
 - the disk image downloads and its checksum matches `SHA256SUMS`;
 - `appcast.xml` is reachable at the feed address in `SUFeedURL` and names the released version;
 - `scripts/verify-release-artifacts.sh` passes against the published version;
