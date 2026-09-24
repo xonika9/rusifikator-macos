@@ -254,12 +254,115 @@ final class APIClientTests: XCTestCase {
     }
 
     func testTransportFailuresAreCategorized() async {
-        for code in [URLError.cannotFindHost, .secureConnectionFailed, .networkConnectionLost] {
+        for code in [URLError.cannotFindHost, .networkConnectionLost] {
             URLProtocolStub.handler = { _ in
                 throw URLError(code)
             }
             await assertRequestThrows(.transport(requestCode: "A1B2C3D4"), requestID: fixedRequestID)
         }
+    }
+
+    func testSecureConnectionFailureIsRetriedOnce() async throws {
+        let lock = NSLock()
+        var requestCount = 0
+        URLProtocolStub.handler = { _ in
+            let attempt = lock.withLock {
+                requestCount += 1
+                return requestCount
+            }
+            if attempt == 1 {
+                throw URLError(.secureConnectionFailed)
+            }
+            return .json(#"{"choices":[{"message":{"content":"Готово"}}]}"#)
+        }
+
+        let result = try await performRequest()
+
+        XCTAssertEqual(result, "Готово")
+        XCTAssertEqual(lock.withLock { requestCount }, 2)
+    }
+
+    func testRepeatedSecureConnectionFailureExplainsVPNOrServerCause() async {
+        let lock = NSLock()
+        var requestCount = 0
+        URLProtocolStub.handler = { _ in
+            lock.withLock {
+                requestCount += 1
+            }
+            throw URLError(.secureConnectionFailed)
+        }
+
+        do {
+            _ = try await performRequest()
+            XCTFail("Expected secure connection failure")
+        } catch {
+            XCTAssertEqual(
+                error as? APIError,
+                .secureConnectionFailed(requestCode: "A1B2C3D4")
+            )
+            XCTAssertEqual(
+                error.localizedDescription,
+                "Не удалось установить защищённое соединение. "
+                    + "Текст не был отправлен. Возможная причина — VPN или временный сбой сервера. "
+                    + "Повтори запрос или смени сервер VPN. Код запроса: A1B2C3D4."
+            )
+        }
+        XCTAssertEqual(lock.withLock { requestCount }, 2)
+    }
+
+    func testSecureConnectionRetryIsIncludedInSafeDiagnostics() async throws {
+        let lock = NSLock()
+        var requestCount = 0
+        let messages = LockedMessages()
+        let client = OpenAICompatibleClient(
+            protocolClasses: [URLProtocolStub.self],
+            diagnosticSink: { messages.append($0.message) }
+        )
+        URLProtocolStub.handler = { _ in
+            let attempt = lock.withLock {
+                requestCount += 1
+                return requestCount
+            }
+            if attempt == 1 {
+                throw URLError(.secureConnectionFailed)
+            }
+            return .json(#"{"choices":[{"message":{"content":"Готово"}}]}"#)
+        }
+
+        _ = try await client.clean(
+            text: "Секретный текст",
+            baseURL: XCTUnwrap(URL(string: "https://example.com")),
+            model: "model",
+            apiKey: "secret-key",
+            systemPrompt: "SYSTEM",
+            requestID: fixedRequestID
+        )
+
+        XCTAssertTrue(
+            messages.values.contains(
+                "Request A1B2C3D4 retrying once after TLS handshake failure; delay=500ms"
+            )
+        )
+        XCTAssertFalse(messages.values.joined().contains("Секретный текст"))
+        XCTAssertFalse(messages.values.joined().contains("secret-key"))
+    }
+
+    func testTLSRetryKeepsOriginalRequestDeadline() {
+        XCTAssertEqual(
+            OpenAICompatibleClient.retryTimeout(
+                totalTimeout: 90,
+                elapsed: 2,
+                retryDelay: 0.5
+            ),
+            87.5
+        )
+        XCTAssertNil(
+            OpenAICompatibleClient.retryTimeout(
+                totalTimeout: 90,
+                elapsed: 89.75,
+                retryDelay: 0.5
+            )
+        )
     }
 
     func testEarlySystemTimeoutIsReportedAsNetworkTimeout() async {

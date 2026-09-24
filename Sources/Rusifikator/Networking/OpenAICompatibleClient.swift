@@ -5,6 +5,7 @@ struct OpenAICompatibleClient: Sendable {
     static let maximumResponseBytes = 4 * 1_024 * 1_024
     static let processingTimeout: TimeInterval = 90
     static let connectionCheckTimeout: TimeInterval = 30
+    private static let secureConnectionRetryDelay: TimeInterval = 0.5
     private static let logger = Logger(
         subsystem: "dev.gotacat.Rusifikator",
         category: "network"
@@ -82,14 +83,6 @@ struct OpenAICompatibleClient: Sendable {
         }
         let requestCode = Self.requestCode(for: requestID)
         let startedAt = Date()
-        let transfer = StreamingRequest(
-            maximumBytes: Self.maximumResponseBytes,
-            allowedOrigin: allowedOrigin,
-            requestCode: requestCode,
-            timeoutSeconds: Int(timeoutInterval),
-            startedAt: startedAt,
-            diagnosticSink: diagnosticSink
-        )
         diagnosticSink(
             .started(
                 requestCode: requestCode,
@@ -102,12 +95,12 @@ struct OpenAICompatibleClient: Sendable {
 
         let data: Data
         do {
-            data = try await transfer.load(
+            data = try await load(
                 request,
-                configuration: Self.makeConfiguration(
-                    timeoutInterval: timeoutInterval,
-                    protocolClasses: protocolClasses
-                )
+                allowedOrigin: allowedOrigin,
+                requestCode: requestCode,
+                startedAt: startedAt,
+                timeoutInterval: timeoutInterval
             )
         } catch let error as APIError {
             Self.logFailure(
@@ -146,7 +139,9 @@ struct OpenAICompatibleClient: Sendable {
                 )
                 throw apiError
             }
-            let apiError = APIError.transport(requestCode: requestCode)
+            let apiError: APIError = error.code == .secureConnectionFailed
+                ? .secureConnectionFailed(requestCode: requestCode)
+                : .transport(requestCode: requestCode)
             Self.logFailure(
                 apiError,
                 requestCode: requestCode,
@@ -205,6 +200,77 @@ struct OpenAICompatibleClient: Sendable {
         return normalized
     }
 
+    private func load(
+        _ request: URLRequest,
+        allowedOrigin: ProviderOrigin,
+        requestCode: String,
+        startedAt: Date,
+        timeoutInterval: TimeInterval
+    ) async throws -> Data {
+        var canRetrySecureConnectionFailure = true
+        var attemptTimeout = timeoutInterval
+
+        while true {
+            let transfer = StreamingRequest(
+                maximumBytes: Self.maximumResponseBytes,
+                allowedOrigin: allowedOrigin,
+                requestCode: requestCode,
+                timeoutSeconds: Int(timeoutInterval),
+                startedAt: startedAt,
+                diagnosticSink: diagnosticSink
+            )
+            do {
+                return try await transfer.load(
+                    request,
+                    configuration: Self.makeConfiguration(
+                        timeoutInterval: attemptTimeout,
+                        protocolClasses: protocolClasses
+                    )
+                )
+            } catch let error as URLError
+                where error.code == .secureConnectionFailed
+                    && canRetrySecureConnectionFailure {
+                let elapsed = Date().timeIntervalSince(startedAt)
+                guard Self.retryTimeout(
+                    totalTimeout: timeoutInterval,
+                    elapsed: elapsed,
+                    retryDelay: Self.secureConnectionRetryDelay
+                ) != nil else {
+                    throw error
+                }
+                canRetrySecureConnectionFailure = false
+                diagnosticSink(
+                    .retryingTLS(
+                        requestCode: requestCode,
+                        delayMilliseconds: Int(
+                            Self.secureConnectionRetryDelay * 1_000
+                        )
+                    )
+                )
+                try await Task.sleep(
+                    for: .seconds(Self.secureConnectionRetryDelay)
+                )
+                guard let remainingTimeout = Self.retryTimeout(
+                    totalTimeout: timeoutInterval,
+                    elapsed: Date().timeIntervalSince(startedAt),
+                    retryDelay: 0
+                ) else {
+                    throw error
+                }
+                attemptTimeout = remainingTimeout
+            }
+        }
+    }
+
+    static func retryTimeout(
+        totalTimeout: TimeInterval,
+        elapsed: TimeInterval,
+        retryDelay: TimeInterval
+    ) -> TimeInterval? {
+        let remaining = totalTimeout - elapsed - retryDelay
+        return remaining > 0 ? remaining : nil
+    }
+
     func checkConnection(
         baseURL: URL,
         model: String,
@@ -248,7 +314,7 @@ struct OpenAICompatibleClient: Sendable {
         switch event {
         case .completed(_, .some, _, _):
             logger.error("\(event.message, privacy: .public)")
-        case .started, .response, .metrics:
+        case .started, .response, .retryingTLS, .metrics:
             logger.info("\(event.message, privacy: .public)")
         case .completed:
             logger.debug("\(event.message, privacy: .public)")
@@ -602,6 +668,8 @@ extension StreamingRequest: URLSessionTaskDelegate {
                         )
                     )
                 )
+            } else if urlError.code == .secureConnectionFailed {
+                finish(.failure(urlError))
             } else {
                 finish(.failure(APIError.transport(requestCode: requestCode)))
             }
