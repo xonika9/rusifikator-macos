@@ -54,6 +54,10 @@ Before the first run, open the settings, enter your API key and press Save. The 
 
 From there the loop is simple: paste the transcript, run the cleanup, copy the result. The connection test next to the settings sends a short service string and reports whether the provider answers, without saving the draft values from the window.
 
+If a VPN drops the secure connection before the text is sent, the application
+retries once. If the connection still fails, the error message points to the VPN
+or server as the likely cause.
+
 Two habits worth knowing in advance:
 
 - **One instance per session.** A second launch brings the running copy forward and exits immediately — no second menu bar icon appears.
