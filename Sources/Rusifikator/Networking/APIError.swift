@@ -9,6 +9,7 @@ enum APIError: Error, Equatable, Sendable {
     case httpTimeout(requestCode: String)
     case clientTimeout(seconds: Int, requestCode: String)
     case networkTimeout(requestCode: String)
+    case secureConnectionFailed(requestCode: String)
     case rateLimited
     case serverError
     case httpError(Int)
@@ -39,6 +40,10 @@ extension APIError: LocalizedError {
             "Сервис не ответил за \(seconds) секунд. Код запроса: \(requestCode)."
         case let .networkTimeout(requestCode):
             "Сетевой запрос прервался по тайм-ауту. Проверь соединение и повтори запрос. Код запроса: \(requestCode)."
+        case let .secureConnectionFailed(requestCode):
+            "Не удалось установить защищённое соединение. "
+                + "Текст не был отправлен. Возможная причина — VPN или временный сбой сервера. "
+                + "Повтори запрос или смени сервер VPN. Код запроса: \(requestCode)."
         case .rateLimited:
             "Слишком много запросов. Подожди и попробуй снова."
         case .serverError:

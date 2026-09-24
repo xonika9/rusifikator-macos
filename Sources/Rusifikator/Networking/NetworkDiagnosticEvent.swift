@@ -13,6 +13,7 @@ enum NetworkDiagnosticEvent: Equatable, Sendable {
         statusCode: Int,
         expectedBodyBytes: Int64
     )
+    case retryingTLS(requestCode: String, delayMilliseconds: Int)
     case metrics(requestCode: String, summary: String)
     case completed(
         requestCode: String,
@@ -36,6 +37,9 @@ enum NetworkDiagnosticEvent: Equatable, Sendable {
         case let .response(requestCode, statusCode, expectedBodyBytes):
             "Request \(requestCode) received HTTP \(statusCode); "
                 + "expectedBody=\(expectedBodyBytes)B"
+        case let .retryingTLS(requestCode, delayMilliseconds):
+            "Request \(requestCode) retrying once after TLS handshake failure; "
+                + "delay=\(delayMilliseconds)ms"
         case let .metrics(requestCode, summary):
             "Request \(requestCode) metrics; \(Self.singleLine(summary))"
         case let .completed(requestCode, failure, bytesSent, bytesReceived):
