@@ -278,6 +278,11 @@ final class AlignedTextContainer: NSView {
     /// уменьшается на ходу. После полной раскладки он сразу показывает
     /// настоящий объём текста.
     func layOutWholeText() {
+        // До назначения ширины переносы ещё не определены. layout() выполнит
+        // полный проход, как только поле получит ненулевой размер.
+        guard bounds.width > 0 else {
+            return
+        }
         if let layoutManager = textView.textLayoutManager {
             layoutManager.ensureLayout(for: layoutManager.documentRange)
             return
