@@ -12,6 +12,9 @@ final class UpdateViewModel {
     /// Version the update channel compares, for example `1.0.0`.
     let canonicalVersion: String
 
+    private(set) var isAvailable = false
+    private var mechanismCanCheck = false
+
     @ObservationIgnored
     private weak var checker: (any UpdateChecking)?
 
@@ -27,17 +30,25 @@ final class UpdateViewModel {
     /// launching, so the settings screen can exist before it.
     func attach(_ checker: any UpdateChecking) {
         self.checker = checker
+        isAvailable = true
+        mechanismCanCheck = checker.canCheckForUpdates
+        state = .idle
     }
 
-    var isAvailable: Bool {
-        checker != nil
+    func beginPreparing() { state = .preparing }
+
+    func startupFailed() {
+        checker = nil
+        isAvailable = false
+        mechanismCanCheck = false
+        state = .failed("Не удалось подготовить обновления. Перезапусти приложение.")
     }
 
     var canCheck: Bool {
-        guard let checker else {
+        guard checker != nil, isAvailable else {
             return false
         }
-        return state != .checking && checker.canCheckForUpdates
+        return state != .checking && state != .preparing && mechanismCanCheck
     }
 
     var installedVersionDescription: String {
@@ -48,7 +59,7 @@ final class UpdateViewModel {
 
     func checkForUpdates() {
         guard let checker, canCheck else {
-            if checker == nil {
+            if checker == nil && state == .idle {
                 state = .failed("Обновления недоступны в этой сборке.")
             }
             return
@@ -60,6 +71,8 @@ final class UpdateViewModel {
 
     func handle(_ report: UpdateReport) {
         switch report {
+        case let .availabilityChanged(available):
+            mechanismCanCheck = available
         case let .foundUpdate(version):
             state = .available(version: version)
         case .noUpdateFound:

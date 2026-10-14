@@ -6,17 +6,33 @@ import Sparkle
 /// authenticity check and the installation; this type only starts checks and
 /// translates Sparkle's reports into the states shown in settings.
 @MainActor
-final class SparkleUpdaterService: UpdateChecking {
+final class SparkleUpdaterService: UpdateStarting {
     private let controller: SPUStandardUpdaterController
     private let bridge: SparkleDelegateBridge
+    private let report: (UpdateReport) -> Void
+    private var availabilityObservation: NSKeyValueObservation?
+    private var started = false
 
     init(report: @escaping (UpdateReport) -> Void) {
+        self.report = report
         bridge = SparkleDelegateBridge(report: report)
         controller = SPUStandardUpdaterController(
-            startingUpdater: true,
+            startingUpdater: false,
             updaterDelegate: bridge,
             userDriverDelegate: bridge
         )
+    }
+
+    func start() throws {
+        guard !started else { return }
+        try controller.updater.start()
+        started = true
+        availabilityObservation = controller.updater.observe(\.canCheckForUpdates, options: [.initial, .new]) { [weak self] updater, _ in
+            let available = updater.canCheckForUpdates
+            Task { @MainActor [weak self] in
+                self?.report(.availabilityChanged(available))
+            }
+        }
     }
 
     var canCheckForUpdates: Bool {

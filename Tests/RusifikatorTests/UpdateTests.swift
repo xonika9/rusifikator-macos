@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+import Observation
 @testable import Rusifikator
 
 final class UpdateErrorMappingTests: XCTestCase {
@@ -160,6 +161,24 @@ final class UpdateViewModelTests: XCTestCase {
 
         model.checkForUpdates()
         XCTAssertEqual(model.state, .failed("Обновления недоступны в этой сборке."))
+    }
+
+    func testMechanismAvailabilityChangesAreObservedWithoutReattaching() {
+        let checker = UpdateCheckerSpy()
+        checker.canCheckForUpdates = false
+        let model = makeModel(checker: checker)
+        let observed = expectation(description: "Update button invalidated")
+        withObservationTracking {
+            _ = model.canCheck
+        } onChange: {
+            observed.fulfill()
+        }
+        XCTAssertFalse(model.canCheck)
+        model.handle(.availabilityChanged(true))
+        wait(for: [observed], timeout: 0.1)
+        XCTAssertTrue(model.canCheck)
+        model.handle(.availabilityChanged(false))
+        XCTAssertFalse(model.canCheck)
     }
 
     func testInstalledVersionMentionsTheCanonicalFormOnlyWhenItDiffers() {

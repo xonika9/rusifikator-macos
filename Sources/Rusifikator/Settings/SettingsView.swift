@@ -768,8 +768,10 @@ struct SettingsView: View {
 
     private var updateTitle: String {
         switch updates.state {
+        case .preparing:
+            "Подготавливаю обновления…"
         case .idle:
-            "Обновления"
+            updates.isAvailable ? "Обновления" : "Обновления недоступны"
         case .checking:
             "Проверяю обновления…"
         case .upToDate:
@@ -787,14 +789,20 @@ struct SettingsView: View {
             AppTheme.accent
         case .failed:
             AppTheme.danger
-        case .idle, .checking:
+        case .preparing, .idle, .checking:
             AppTheme.text
         }
     }
 
     private var updateDetail: String {
+        if updates.state == .preparing {
+            return "Проверка станет доступна после подготовки."
+        }
         if case let .failed(message) = updates.state {
             return message
+        }
+        if !updates.isAvailable {
+            return "Обновления недоступны в этой сборке."
         }
         if case .available = updates.state {
             return "Установку подтвердишь в окне обновления."

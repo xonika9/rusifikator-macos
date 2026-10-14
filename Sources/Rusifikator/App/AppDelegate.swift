@@ -13,8 +13,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let networkSessions = NetworkSessionOwner()
     private let popover = NSPopover()
     private var statusItem: NSStatusItem?
-    private var updater: (any UpdateChecking)?
-    private let makeUpdater: (@escaping (UpdateReport) -> Void) -> any UpdateChecking
+    private var updater: (any UpdateStarting)?
+    private var updaterStartup: Task<Void, Never>?
+    private var updaterStartupID: UUID?
+    private var isTerminating = false
+    private let scheduleUpdater: (@escaping @MainActor () -> Void) -> Task<Void, Never>
+    private let makeUpdater: (@escaping (UpdateReport) -> Void) -> any UpdateStarting
 
     override convenience init() {
         self.init(
@@ -31,10 +35,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         history: HistoryStore,
         settingsStore: SettingsStore,
         loginItem: LoginItemController,
-        makeUpdater: @escaping (@escaping (UpdateReport) -> Void) -> any UpdateChecking
+        makeUpdater: @escaping (@escaping (UpdateReport) -> Void) -> any UpdateStarting,
+        scheduleUpdater: @escaping (@escaping @MainActor () -> Void) -> Task<Void, Never> = { operation in
+            Task { @MainActor in operation() }
+        }
     ) {
         self.credentials = credentials
         self.makeUpdater = makeUpdater
+        self.scheduleUpdater = scheduleUpdater
         self.history = history
         let client = OpenAICompatibleClient(sessionOwner: networkSessions)
         editor = EditorViewModel(apiClient: OpenAIEditorAPIClient(client: client), credentials: credentials, history: history)
@@ -47,20 +55,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         configurePopover()
         configureStatusItem()
-        configureUpdater()
 
         SingleInstanceGate.shared.onActivationRequest = { [weak self] in
             self?.activateFromAnotherInstance()
         }
+        scheduleUpdaterStartup()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        cancelUpdaterStartup()
         statusItem = nil
     }
 
     func applicationShouldTerminate(
         _ sender: NSApplication
     ) -> NSApplication.TerminateReply {
+        cancelUpdaterStartup()
         credentials.beginShutdown()
         settings.beginShutdown()
         editor.beginShutdown()
@@ -132,13 +142,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         )
     }
 
-    private func configureUpdater() {
-        let updates = updates
-        let service = makeUpdater { report in
-            updates.handle(report)
+    private func scheduleUpdaterStartup() {
+        guard !isTerminating, updater == nil, updaterStartupID == nil else { return }
+        updates.beginPreparing()
+        let id = UUID()
+        updaterStartupID = id
+        updaterStartup = scheduleUpdater { [weak self] in
+            guard let self, !self.isTerminating, self.updaterStartupID == id else { return }
+            self.updaterStartupID = nil
+            self.updaterStartup = nil
+            let service = self.makeUpdater { [weak self] report in
+                guard let self, !self.isTerminating else { return }
+                self.updates.handle(report)
+            }
+            do {
+                try service.start()
+                self.updater = service
+                self.updates.attach(service)
+            } catch {
+                self.updates.startupFailed()
+            }
         }
-        updater = service
-        updates.attach(service)
+    }
+
+    private func cancelUpdaterStartup() {
+        isTerminating = true
+        updaterStartupID = nil
+        updaterStartup?.cancel()
+        updaterStartup = nil
     }
 
     private func configureStatusItem() {

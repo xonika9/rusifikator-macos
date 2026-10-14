@@ -59,12 +59,88 @@ final class AppLaunchTests: XCTestCase {
         }
     }
 
+    func testUpdaterStartsInFirstScheduledStageWithoutOpeningWindow() throws {
+        let scheduler = LaunchScheduler()
+        let service = LaunchUpdater()
+        var created = 0
+        let delegate = makeDelegate(makeUpdater: { _ in created += 1; return service }, scheduler: scheduler)
+        delegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
+        defer { delegate.applicationWillTerminate(Notification(name: NSApplication.willTerminateNotification)) }
+        XCTAssertEqual(created, 0)
+        XCTAssertEqual(service.startCount, 0)
+        XCTAssertEqual(delegate.updates.state, .preparing)
+        XCTAssertFalse(delegate.updates.canCheck)
+        delegate.updates.checkForUpdates()
+        XCTAssertEqual(delegate.updates.state, .preparing)
+        XCTAssertNil(try popover(of: delegate).contentViewController)
+        scheduler.run()
+        XCTAssertEqual(created, 1)
+        XCTAssertEqual(service.startCount, 1)
+        XCTAssertEqual(delegate.updates.state, .idle)
+        XCTAssertTrue(delegate.updates.isAvailable)
+        XCTAssertNil(try popover(of: delegate).contentViewController)
+        delegate.openSettings()
+        delegate.openSettings()
+        SingleInstanceGate.shared.onActivationRequest?()
+        scheduler.run()
+        XCTAssertEqual(service.startCount, 1)
+        XCTAssertEqual(created, 1)
+        XCTAssertEqual(service.checkCount, 0)
+        try popover(of: delegate).performClose(nil)
+    }
+
+    func testDefaultSchedulerStartsAfterLaunchWithoutWindow() async throws {
+        var created = 0
+        let service = LaunchUpdater()
+        let delegate = makeDelegate(makeUpdater: { _ in created += 1; return service })
+        delegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
+        XCTAssertEqual(created, 0)
+        let deadline = ContinuousClock.now.advanced(by: .seconds(1))
+        while created == 0 && ContinuousClock.now < deadline { await Task.yield() }
+        XCTAssertEqual(created, 1)
+        XCTAssertEqual(service.startCount, 1)
+        XCTAssertTrue(delegate.updates.isAvailable)
+        XCTAssertNil(try popover(of: delegate).contentViewController)
+        delegate.applicationWillTerminate(Notification(name: NSApplication.willTerminateNotification))
+    }
+
+    func testTerminationCancelsPendingUpdaterEvenIfSchedulerDeliversLate() {
+        let scheduler = LaunchScheduler()
+        var created = 0
+        let delegate = makeDelegate(makeUpdater: { _ in created += 1; return LaunchUpdater() }, scheduler: scheduler)
+        delegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
+        XCTAssertEqual(delegate.applicationShouldTerminate(NSApplication.shared), .terminateLater)
+        scheduler.run()
+        XCTAssertEqual(created, 0)
+        XCTAssertFalse(delegate.updates.isAvailable)
+        delegate.applicationWillTerminate(Notification(name: NSApplication.willTerminateNotification))
+    }
+
+    func testStartupFailureNeverAttachesCheckerOrExposesErrorDetail() {
+        let scheduler = LaunchScheduler()
+        let service = LaunchUpdater()
+        service.startFails = true
+        let delegate = makeDelegate(makeUpdater: { _ in service }, scheduler: scheduler)
+        delegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
+        scheduler.run()
+        XCTAssertEqual(service.startCount, 1)
+        XCTAssertFalse(delegate.updates.isAvailable)
+        XCTAssertFalse(delegate.updates.canCheck)
+        XCTAssertEqual(delegate.updates.state, .failed("Не удалось подготовить обновления. Перезапусти приложение."))
+        delegate.updates.checkForUpdates()
+        XCTAssertEqual(delegate.updates.state, .failed("Не удалось подготовить обновления. Перезапусти приложение."))
+        delegate.applicationWillTerminate(Notification(name: NSApplication.willTerminateNotification))
+    }
+
     // Inspect the actual native object without shipping a testing-only accessor.
     private func popover(of delegate: AppDelegate) throws -> NSPopover {
         try XCTUnwrap(Mirror(reflecting: delegate).children.first { $0.label == "popover" }?.value as? NSPopover)
     }
 
-    private func makeDelegate() -> AppDelegate {
+    private func makeDelegate(
+        makeUpdater: @escaping (@escaping (UpdateReport) -> Void) -> any UpdateStarting = { _ in LaunchUpdater() },
+        scheduler: LaunchScheduler? = nil
+    ) -> AppDelegate {
         _ = NSApplication.shared
         let credentials = AsyncCredentialStore(makeStore: { LaunchCredentials() })
         let defaults = UserDefaults(suiteName: "rusifikator-launch-\(UUID().uuidString)")!
@@ -73,7 +149,11 @@ final class AppLaunchTests: XCTestCase {
             history: HistoryStore(persistence: LaunchHistory()),
             settingsStore: SettingsStore(defaults: defaults),
             loginItem: LoginItemController(service: LaunchLoginItem()),
-            makeUpdater: { _ in LaunchUpdater() }
+            makeUpdater: makeUpdater,
+            scheduleUpdater: { operation in
+                if let scheduler { return scheduler.schedule(operation) }
+                return Task { @MainActor in operation() }
+            }
         )
     }
 }
@@ -87,13 +167,33 @@ private struct LaunchHistory: HistoryPersisting {
     func load(maximumEntryCount: Int) async -> [HistoryEntry] { [] }
     func persist(_ entries: [HistoryEntry], generation: Int) async throws {}
 }
-@MainActor private final class LaunchUpdater: UpdateChecking {
-    var canCheckForUpdates: Bool { false }
-    func checkForUpdates() {}
+@MainActor private final class LaunchUpdater: UpdateStarting {
+    var canCheckForUpdates = true
+    var startCount = 0
+    var checkCount = 0
+    var startFails = false
+    func start() throws {
+        startCount += 1
+        if startFails { throw NSError(domain: "SyntheticPrivateDetail", code: 42) }
+    }
+    func checkForUpdates() { checkCount += 1 }
 }
 @MainActor private final class LaunchLoginItem: LoginItemServicing {
     var status: LoginItemController.Status { .unavailable }
     func register() throws {}
     func unregister() throws {}
     func openSystemSettings() {}
+}
+
+@MainActor private final class LaunchScheduler {
+    var operations: [@MainActor () -> Void] = []
+    func schedule(_ operation: @escaping @MainActor () -> Void) -> Task<Void, Never> {
+        operations.append(operation)
+        return Task {}
+    }
+    func run() {
+        let pending = operations
+        operations = []
+        pending.forEach { $0() }
+    }
 }

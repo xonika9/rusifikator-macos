@@ -2,6 +2,7 @@ import Foundation
 
 /// What the settings screen tells the owner about updates.
 enum UpdateState: Equatable, Sendable {
+    case preparing
     case idle
     case checking
     case upToDate
@@ -17,9 +18,15 @@ protocol UpdateChecking: AnyObject {
     func checkForUpdates()
 }
 
+@MainActor
+protocol UpdateStarting: UpdateChecking {
+    func start() throws
+}
+
 /// Reports from the update mechanism, already reduced to values that are safe
 /// to carry across isolation boundaries.
 enum UpdateReport: Equatable, Sendable {
+    case availabilityChanged(Bool)
     case foundUpdate(version: String)
     case noUpdateFound
     case cancelledByUser

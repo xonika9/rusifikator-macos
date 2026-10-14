@@ -67,7 +67,7 @@ Two habits worth knowing in advance:
 
 ## Updates
 
-Settings carry a "Проверить обновления" action, with the current state next to it: checking, up to date, a new version is available, or the check failed. Once a day the application consults the channel quietly and never interrupts your work — the update window only opens on an explicit click.
+Settings carry a "Проверить обновления" action, with the current state next to it: checking, up to date, a new version is available, or the check failed. Just after launch, the panel may briefly show that updates are being prepared; checking is unavailable until preparation finishes. Automatic updates do not require opening the window. Once a day the application consults the channel quietly and never interrupts your work — the update window only opens on an explicit click.
 
 Updates run on [Sparkle](https://sparkle-project.org), the standard update mechanism for macOS applications distributed outside the App Store:
 
