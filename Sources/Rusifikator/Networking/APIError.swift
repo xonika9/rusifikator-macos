@@ -15,6 +15,7 @@ enum APIError: Error, Equatable, Sendable {
     case httpError(Int)
     case transport(requestCode: String)
     case invalidResponse
+    case invalidStreamingResponse
     case emptyResponse
     case responseTooLarge
     case unsafeRedirect
@@ -54,6 +55,8 @@ extension APIError: LocalizedError {
             "Не удалось связаться с сервисом. Проверь сеть и адрес API. Код запроса: \(requestCode)."
         case .invalidResponse:
             "Сервис вернул ответ в несовместимом формате."
+        case .invalidStreamingResponse:
+            "Сервис не подтвердил полный ответ. Можно выключить частичный показ в настройках и отправить текст ещё раз."
         case .emptyResponse:
             "Сервис вернул пустой результат."
         case .responseTooLarge:

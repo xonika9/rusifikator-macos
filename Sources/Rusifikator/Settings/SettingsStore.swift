@@ -6,6 +6,7 @@ final class SettingsStore {
 
     private enum Key {
         static let providerURL = "dev.gotacat.Rusifikator.providerURL"
+        static let partialPreview = "dev.gotacat.Rusifikator.partialPreview"
         static let model = "dev.gotacat.Rusifikator.model"
     }
 
@@ -35,7 +36,13 @@ final class SettingsStore {
         }
     }
 
+    var partialPreviewEnabled: Bool {
+        get { defaults.bool(forKey: Key.partialPreview) }
+        set { defaults.set(newValue, forKey: Key.partialPreview) }
+    }
+
     func reset() {
+        defaults.removeObject(forKey: Key.partialPreview)
         defaults.removeObject(forKey: Key.providerURL)
         defaults.removeObject(forKey: Key.model)
     }

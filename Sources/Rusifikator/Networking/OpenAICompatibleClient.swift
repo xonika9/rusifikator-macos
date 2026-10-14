@@ -46,7 +46,9 @@ struct OpenAICompatibleClient: Sendable {
         model: String,
         apiKey: String,
         systemPrompt: String = FixedSystemPrompt.text,
-        requestID: UUID = UUID()
+        requestID: UUID = UUID(),
+        partialPreviewEnabled: Bool = false,
+        onPreview: @escaping @Sendable (String) -> Void = { _ in }
     ) async throws -> String {
         try await clean(
             text: text,
@@ -55,7 +57,9 @@ struct OpenAICompatibleClient: Sendable {
             apiKey: apiKey,
             systemPrompt: systemPrompt,
             requestID: requestID,
-            timeoutInterval: Self.processingTimeout
+            timeoutInterval: Self.processingTimeout,
+            partialPreviewEnabled: partialPreviewEnabled,
+            onPreview: onPreview
         )
     }
 
@@ -66,7 +70,9 @@ struct OpenAICompatibleClient: Sendable {
         apiKey: String,
         systemPrompt: String,
         requestID: UUID,
-        timeoutInterval: TimeInterval
+        timeoutInterval: TimeInterval,
+        partialPreviewEnabled: Bool = false,
+        onPreview: @escaping @Sendable (String) -> Void = { _ in }
     ) async throws -> String {
         let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else {
@@ -80,7 +86,7 @@ struct OpenAICompatibleClient: Sendable {
                 .init(role: .system, content: systemPrompt),
                 .init(role: .user, content: text)
             ],
-            stream: false
+            stream: partialPreviewEnabled
         )
 
         var request = URLRequest(url: endpoint)
@@ -109,14 +115,16 @@ struct OpenAICompatibleClient: Sendable {
             )
         )
 
-        let data: Data
+        let body: ResponseBody
         do {
-            data = try await load(
+            body = try await load(
                 request,
                 allowedOrigin: allowedOrigin,
                 requestCode: requestCode,
                 startedAt: startedAt,
-                timeoutInterval: timeoutInterval
+                timeoutInterval: timeoutInterval,
+                partialPreviewEnabled: partialPreviewEnabled,
+                onPreview: onPreview
             )
         } catch let error as APIError {
             Self.logFailure(
@@ -174,28 +182,16 @@ struct OpenAICompatibleClient: Sendable {
             throw apiError
         }
 
-        let response: ChatCompletionResponse
-        do {
-            response = try JSONDecoder().decode(
-                ChatCompletionResponse.self,
-                from: data
-            )
-        } catch {
-            Self.logFailure(
-                APIError.invalidResponse,
-                requestCode: requestCode,
-                startedAt: startedAt
-            )
-            throw APIError.invalidResponse
-        }
-
-        guard let content = response.choices.first?.message.content else {
-            Self.logFailure(
-                APIError.emptyResponse,
-                requestCode: requestCode,
-                startedAt: startedAt
-            )
-            throw APIError.emptyResponse
+        let content: String
+        switch body {
+        case let .streamed(text):
+            content = text
+        case let .json(data):
+            let response: ChatCompletionResponse
+            do { response = try JSONDecoder().decode(ChatCompletionResponse.self, from: data) }
+            catch { throw partialPreviewEnabled ? APIError.invalidStreamingResponse : APIError.invalidResponse }
+            guard let value = response.choices.first?.message.content else { throw APIError.emptyResponse }
+            content = value
         }
 
         let normalized = Self.normalizeContent(content)
@@ -221,11 +217,13 @@ struct OpenAICompatibleClient: Sendable {
         allowedOrigin: ProviderOrigin,
         requestCode: String,
         startedAt: Date,
-        timeoutInterval: TimeInterval
-    ) async throws -> Data {
+        timeoutInterval: TimeInterval,
+        partialPreviewEnabled: Bool,
+        onPreview: @escaping @Sendable (String) -> Void
+    ) async throws -> ResponseBody {
         let clock = self.clock
         let deadline = clock.now.advanced(by: .seconds(timeoutInterval))
-        return try await withThrowingTaskGroup(of: Data.self) { group in
+        return try await withThrowingTaskGroup(of: ResponseBody.self) { group in
             group.addTask {
                 try await clock.sleep(until: deadline)
                 throw APIError.clientTimeout(seconds: Int(timeoutInterval), requestCode: requestCode)
@@ -241,7 +239,9 @@ struct OpenAICompatibleClient: Sendable {
                         requestCode: requestCode,
                         timeoutSeconds: Int(timeoutInterval),
                         startedAt: startedAt,
-                        diagnosticSink: diagnosticSink
+                        diagnosticSink: diagnosticSink,
+                        partialPreviewEnabled: partialPreviewEnabled,
+                        onPreview: onPreview
                     )
                     do {
                         return try await transfer.load(request, lease: lease)
@@ -422,6 +422,8 @@ struct OpenAICompatibleClient: Sendable {
     }
 }
 
+private enum ResponseBody: Sendable { case json(Data), streamed(String) }
+
 private final class StreamingRequest: NSObject, @unchecked Sendable {
     private let maximumBytes: Int
     private let allowedOrigin: ProviderOrigin
@@ -431,10 +433,14 @@ private final class StreamingRequest: NSObject, @unchecked Sendable {
     private let diagnosticSink: @Sendable (NetworkDiagnosticEvent) -> Void
     private let lock = NSLock()
 
-    private var continuation: CheckedContinuation<Data, Error>?
+    private var continuation: CheckedContinuation<ResponseBody, Error>?
     private var lease: NetworkSessionOwner.Lease?
     private var task: URLSessionDataTask?
     private var buffer = Data()
+    private var receivedBytes = 0
+    private var decoder: StreamingResponseDecoder?
+    private let partialPreviewEnabled: Bool
+    private let onPreview: @Sendable (String) -> Void
     private var isFinished = false
     private var cancellationRequested = false
 
@@ -444,8 +450,12 @@ private final class StreamingRequest: NSObject, @unchecked Sendable {
         requestCode: String,
         timeoutSeconds: Int,
         startedAt: Date,
-        diagnosticSink: @escaping @Sendable (NetworkDiagnosticEvent) -> Void
+        diagnosticSink: @escaping @Sendable (NetworkDiagnosticEvent) -> Void,
+        partialPreviewEnabled: Bool,
+        onPreview: @escaping @Sendable (String) -> Void
     ) {
+        self.partialPreviewEnabled = partialPreviewEnabled
+        self.onPreview = onPreview
         self.maximumBytes = maximumBytes
         self.allowedOrigin = allowedOrigin
         self.requestCode = requestCode
@@ -457,7 +467,7 @@ private final class StreamingRequest: NSObject, @unchecked Sendable {
     func load(
         _ request: URLRequest,
         lease: NetworkSessionOwner.Lease
-    ) async throws -> Data {
+    ) async throws -> ResponseBody {
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 do {
@@ -491,13 +501,13 @@ private final class StreamingRequest: NSObject, @unchecked Sendable {
     }
 
     private func finish(
-        _ result: Result<Data, Error>,
+        _ result: Result<ResponseBody, Error>,
         cancelTask: Bool = false
     ) {
         let resources = lock.withLock {
             guard !isFinished else {
                 return nil as (
-                    CheckedContinuation<Data, Error>?,
+                    CheckedContinuation<ResponseBody, Error>?,
                     URLSessionDataTask?
                 )?
             }
@@ -579,6 +589,20 @@ extension StreamingRequest: URLSessionDataDelegate {
             finish(.failure(APIError.responseTooLarge), cancelTask: true)
             return
         }
+        if partialPreviewEnabled {
+            let type = httpResponse.value(forHTTPHeaderField: "Content-Type")?
+                .split(separator: ";", maxSplits: 1).first?
+                .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            switch type {
+            case "text/event-stream":
+                lock.withLock { decoder = StreamingResponseDecoder() }
+            case "application/json": break
+            default:
+                completionHandler(.cancel)
+                finish(.failure(APIError.invalidStreamingResponse), cancelTask: true)
+                return
+            }
+        }
         completionHandler(.allow)
     }
 
@@ -587,22 +611,19 @@ extension StreamingRequest: URLSessionDataDelegate {
         dataTask: URLSessionDataTask,
         didReceive data: Data
     ) {
-        let exceedsLimit = lock.withLock {
-            guard !isFinished else {
-                return false
-            }
-            let exceedsLimit = data.count > maximumBytes - buffer.count
-            if !exceedsLimit {
+        do {
+            let preview = try lock.withLock { () throws -> String? in
+                guard !isFinished else { return nil }
+                guard data.count <= maximumBytes - receivedBytes else { throw APIError.responseTooLarge }
+                receivedBytes += data.count
+                if decoder != nil { return try decoder!.append(data) }
                 buffer.append(data)
+                return nil
             }
-            return exceedsLimit
-        }
-
-        if exceedsLimit {
-            finish(
-                .failure(APIError.responseTooLarge),
-                cancelTask: true
-            )
+            // User code can cancel/reenter; never invoke it under the request lock.
+            if let preview { onPreview(preview) }
+        } catch {
+            finish(.failure(error), cancelTask: true)
         }
     }
 }
@@ -677,7 +698,7 @@ extension StreamingRequest: URLSessionTaskDelegate {
                     )
                 )
             } else if urlError.code == .secureConnectionFailed {
-                let receivedData = lock.withLock { !buffer.isEmpty }
+                let receivedData = lock.withLock { receivedBytes > 0 }
                 finish(.failure(receivedData ? APIError.transport(requestCode: requestCode) : urlError))
             } else {
                 finish(.failure(APIError.transport(requestCode: requestCode)))
@@ -689,7 +710,12 @@ extension StreamingRequest: URLSessionTaskDelegate {
             return
         }
 
-        let data = lock.withLock { buffer }
-        finish(.success(data))
+        do {
+            let body = try lock.withLock { () throws -> ResponseBody in
+                if decoder != nil { return .streamed(try decoder!.finish()) }
+                return .json(buffer)
+            }
+            finish(.success(body))
+        } catch { finish(.failure(error)) }
     }
 }

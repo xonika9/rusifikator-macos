@@ -47,6 +47,7 @@ final class EditorViewModelTests: XCTestCase {
         model.submit(
             baseURL: baseURL,
             model: "first-model",
+            partialPreviewEnabled: true,
             credentials: ImmediateEditorCredentials(key: "first-key"),
             systemPrompt: "first-system"
         )
@@ -68,6 +69,7 @@ final class EditorViewModelTests: XCTestCase {
         XCTAssertEqual(calls[0].source, "Первый текст")
         XCTAssertEqual(calls[0].baseURL, baseURL)
         XCTAssertEqual(calls[0].model, "first-model")
+        XCTAssertTrue(calls[0].partialPreviewEnabled)
         XCTAssertEqual(calls[0].apiKey, "first-key")
         XCTAssertEqual(calls[0].systemPrompt, "first-system")
 
@@ -638,6 +640,54 @@ final class EditorViewModelTests: XCTestCase {
         }
     }
 
+    func testPreviewCannotCopyOrEnterHistoryAndConfirmedFinalIsSavedOnce() async {
+        let client = ControlledEditorAPIClient()
+        let history = HistoryRecorderSpy()
+        let clipboard = ClipboardSpy()
+        let model = makeModel(client: client, clipboard: clipboard, history: history)
+        model.source = "Исходник"
+        model.submit(baseURL: baseURL, model: "model", partialPreviewEnabled: true, credentials: ImmediateEditorCredentials(key: "key"))
+        await waitForCallCount(1, client: client)
+        await client.preview(call: 0, text: "сырой фрагмент")
+        for _ in 0..<500 { if !model.previewText.isEmpty { break }; await Task.yield() }
+        XCTAssertEqual(model.previewText, "сырой фрагмент")
+        XCTAssertNil(model.result)
+        XCTAssertFalse(model.canCopy)
+        model.copyResult()
+        XCTAssertTrue(clipboard.copiedValues.isEmpty)
+        XCTAssertTrue(history.entries.isEmpty)
+        for i in 0..<2000 { await client.preview(call: 0, text: "фрагмент \(i)") }
+        await client.succeed(call: 0, with: "Полный результат")
+        await waitForState(.success, model: model)
+        XCTAssertEqual(model.previewText, "")
+        XCTAssertEqual(model.result, "Полный результат")
+        XCTAssertEqual(history.entries, [.init(source: "Исходник", result: "Полный результат")])
+        XCTAssertTrue(model.canCopy)
+    }
+
+    func testCancelledPreviewAndLatePublicationCannotReplaceNewOperation() async {
+        let client = ControlledEditorAPIClient()
+        let model = makeModel(client: client)
+        model.source = "A"
+        model.submit(baseURL: baseURL, model: "A", partialPreviewEnabled: true, credentials: ImmediateEditorCredentials(key: "key"))
+        await waitForCallCount(1, client: client)
+        await client.preview(call: 0, text: "A")
+        model.cancel()
+        model.source = "B"
+        model.submit(baseURL: baseURL, model: "B", partialPreviewEnabled: true, credentials: ImmediateEditorCredentials(key: "key"))
+        await waitForCallCount(2, client: client)
+        await client.preview(call: 0, text: "late A")
+        await client.succeed(call: 0, with: "late final A")
+        await client.preview(call: 1, text: "B")
+        for _ in 0..<500 { if model.previewText == "B" { break }; await Task.yield() }
+        XCTAssertEqual(model.previewText, "B")
+        XCTAssertNil(model.result)
+        await client.fail(call: 1, with: APIError.invalidStreamingResponse)
+        await waitForState(.error, model: model)
+        XCTAssertEqual(model.previewText, "")
+        XCTAssertNil(model.result)
+    }
+
     private func makeModel(
         client: ControlledEditorAPIClient,
         clipboard: ClipboardSpy = ClipboardSpy(),
@@ -682,6 +732,7 @@ final class EditorViewModelTests: XCTestCase {
 
 private actor ControlledEditorAPIClient: EditorAPIClient {
     private var calls: [EditorRequest] = []
+    private var previews: [@Sendable (String) -> Void] = []
     private var continuations: [
         CheckedContinuation<String, any Error>
     ] = []
@@ -692,6 +743,13 @@ private actor ControlledEditorAPIClient: EditorAPIClient {
             continuations.append(continuation)
         }
     }
+
+    func clean(_ request: EditorRequest, onPreview: @escaping @Sendable (String) -> Void) async throws -> String {
+        previews.append(onPreview)
+        return try await clean(request)
+    }
+
+    func preview(call index: Int, text: String) { previews[index](text) }
 
     func recordedCalls() -> [EditorRequest] {
         calls

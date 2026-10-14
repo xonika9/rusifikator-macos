@@ -63,6 +63,7 @@ final class SettingsViewModel {
             draftDidChange()
         }
     }
+    var draftPartialPreviewEnabled: Bool { didSet { draftDidChange() } }
     var showsAPIKey = false
 
     private(set) var connectionState: ConnectionState = .idle
@@ -118,6 +119,7 @@ final class SettingsViewModel {
         let providerURL = store.providerURLString
         let model = store.model
         draftProviderURL = providerURL
+        draftPartialPreviewEnabled = store.partialPreviewEnabled
         draftModel = model
         loginItemStatus = loginItem.status
 
@@ -147,7 +149,7 @@ final class SettingsViewModel {
     func submit(_ editor: EditorViewModel) {
         guard canChangeAppliedSettings,
               let baseURL = URL(string: store.providerURLString) else { return }
-        editor.submit(baseURL: baseURL, model: store.model, credentials: credentials)
+        editor.submit(baseURL: baseURL, model: store.model, partialPreviewEnabled: store.partialPreviewEnabled, credentials: credentials)
     }
 
     /// Returns true only when the successfully saved generation can close.
@@ -156,6 +158,7 @@ final class SettingsViewModel {
         guard canChangeAppliedSettings else { return false }
         invalidateCredentialLoad()
         let generation = draftGeneration
+        let partialPreviewEnabled = draftPartialPreviewEnabled
         let operation = CredentialWriteOperation()
         activeWrite = operation
         isSaving = true
@@ -179,12 +182,14 @@ final class SettingsViewModel {
             // Always apply the saved snapshot; draft edits do not undo a write.
             store.providerURLString = values.urlString
             store.model = values.model
+            store.partialPreviewEnabled = partialPreviewEnabled
             currentAPIKey = effectiveKey
             loadMessage = nil
             let unchanged = generation == draftGeneration
             if unchanged {
                 draftProviderURL = values.urlString
                 draftModel = values.model
+                draftPartialPreviewEnabled = partialPreviewEnabled
                 draftAPIKey = effectiveKey
             }
             saveState = .success
@@ -260,6 +265,7 @@ final class SettingsViewModel {
             if generation == draftGeneration {
                 draftProviderURL = store.providerURLString
                 draftModel = store.model
+                draftPartialPreviewEnabled = store.partialPreviewEnabled
                 draftAPIKey = ""
                 showsAPIKey = false
             }
@@ -277,6 +283,7 @@ final class SettingsViewModel {
         saveState = .idle
         draftProviderURL = store.providerURLString
         draftModel = store.model
+        draftPartialPreviewEnabled = store.partialPreviewEnabled
         draftAPIKey = ""
         reloadCredential()
     }
@@ -556,6 +563,17 @@ struct SettingsView: View {
                         styledTextField(
                             TextField("Модель", text: $model.draftModel)
                         )
+                    }
+
+                    fieldGroup(
+                        title: "Частичный показ",
+                        hint: "Позволяет читать ответ до конца. Копировать можно только готовый текст. Если сервер не поддерживает режим, выключи его и отправь текст снова."
+                    ) {
+                        Toggle("Показывать текст во время обработки", isOn: $model.draftPartialPreviewEnabled)
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                            .font(.system(size: 11))
+                            .tint(AppTheme.accent)
                     }
 
                     loginItemRow

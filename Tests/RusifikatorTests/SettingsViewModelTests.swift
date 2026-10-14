@@ -51,11 +51,13 @@ final class SettingsViewModelTests: XCTestCase {
         model.draftProviderURL = "https://saved.example/v1"
         model.draftModel = "saved/model"
         model.draftAPIKey = "saved-secret"
+        model.draftPartialPreviewEnabled = true
         await model.save()
 
         XCTAssertEqual(model.saveState, .success)
         XCTAssertEqual(SettingsStore(defaults: defaults).providerURLString, "https://saved.example/v1")
         XCTAssertEqual(SettingsStore(defaults: defaults).model, "saved/model")
+        XCTAssertTrue(SettingsStore(defaults: defaults).partialPreviewEnabled)
         let savedKey = try await credentials.apiKey(for: URL(string: "https://saved.example/other")!)
         XCTAssertEqual(savedKey, "saved-secret")
     }
@@ -517,6 +519,7 @@ final class SettingsViewModelTests: XCTestCase {
         model.draftProviderURL = "https://saved.example/"
         model.draftModel = "saved/model"
         model.draftAPIKey = "saved-secret"
+        model.draftPartialPreviewEnabled = true
         await model.save()
 
         await model.reset()
@@ -525,6 +528,7 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(model.draftModel, SettingsStore.defaultModel)
         XCTAssertEqual(model.draftAPIKey, "")
         XCTAssertEqual(model.currentAPIKey, "")
+        XCTAssertFalse(model.draftPartialPreviewEnabled)
         let key = try await credentials.apiKey(for: URL(string: "https://saved.example/")!)
         XCTAssertNil(key)
     }
@@ -535,6 +539,7 @@ final class SettingsViewModelTests: XCTestCase {
         let store = SettingsStore(defaults: defaults)
         store.providerURLString = "https://saved.example/v1"
         store.model = "saved/model"
+        store.partialPreviewEnabled = true
         let credentials = MemoryCredentialStore()
         try await credentials.saveAPIKey(
             "saved-secret",
@@ -550,8 +555,10 @@ final class SettingsViewModelTests: XCTestCase {
 
         model.draftProviderURL = "https://other.example/v1"
         model.draftModel = "other/model"
+        model.draftPartialPreviewEnabled = false
         model.draftAPIKey = "other-secret"
         model.discardDraftChanges()
+        XCTAssertTrue(model.draftPartialPreviewEnabled)
         await model.waitForInitialLoad()
 
         XCTAssertEqual(model.draftProviderURL, "https://saved.example/v1")
@@ -576,6 +583,7 @@ final class SettingsViewModelTests: XCTestCase {
         model.draftProviderURL = "https://saved.example/v1"
         model.draftModel = "saved/model"
         model.draftAPIKey = "saved-key"
+        model.draftPartialPreviewEnabled = true
         let save = Task { await model.save() }
         await credentials.waitForWrite()
         XCTAssertTrue(model.isSaving)
@@ -593,15 +601,18 @@ final class SettingsViewModelTests: XCTestCase {
         model.draftModel = "new/model"
         model.draftAPIKey = ""
         model.draftAPIKey = "new-key"
+        model.draftPartialPreviewEnabled = false
         await credentials.finishWrite()
         let close = await save.value
         XCTAssertFalse(close)
         XCTAssertFalse(model.isSaving)
         XCTAssertEqual(store.providerURLString, "https://saved.example/v1")
         XCTAssertEqual(store.model, "saved/model")
+        XCTAssertTrue(store.partialPreviewEnabled)
         XCTAssertEqual(model.currentAPIKey, "saved-key")
         XCTAssertEqual(model.draftProviderURL, "https://new.example/v1")
         XCTAssertEqual(model.draftModel, "new/model")
+        XCTAssertFalse(model.draftPartialPreviewEnabled)
         XCTAssertEqual(model.draftAPIKey, "new-key")
         let calls = await editorClient.recordedCalls()
         XCTAssertTrue(calls.isEmpty)

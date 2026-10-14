@@ -196,7 +196,7 @@ struct EditorView: View {
         Group {
             switch editor.state {
             case .loading:
-                loadingResult
+                if editor.previewText.isEmpty { loadingResult } else { previewResult }
             case .error:
                 errorResult
             case .success:
@@ -249,6 +249,27 @@ struct EditorView: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Текст обрабатывается")
+    }
+
+    private var previewResult: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("Предварительный текст · ответ ещё не завершён")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(AppTheme.textSoft)
+            PreviewTextSurface(text: editor.previewText)
+                .accessibilityLabel("Предварительный текст, копирование недоступно")
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(AppTheme.surface, in: RoundedRectangle(cornerRadius: 8))
+        .overlay { RoundedRectangle(cornerRadius: 8).stroke(AppTheme.line, lineWidth: 1) }
+        .overlay(alignment: .topTrailing) {
+            CopyTextButton(isConfirming: false, surface: AppTheme.surface) {
+                editor.copyResult()
+            }
+            .disabled(true)
+            .padding(TextSurfaceAccessory.inset)
+        }
     }
 
     private var errorResult: some View {

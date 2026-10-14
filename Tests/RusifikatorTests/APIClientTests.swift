@@ -646,6 +646,110 @@ final class APIClientTests: XCTestCase {
         }
     }
 
+
+    func testStreamedAttemptPublishesRawTextAndNormalizesOnlyConfirmedFinal() async throws {
+        let previews = LockedMessages()
+        let calls = NSLock()
+        var count = 0
+        let body = #"data: {"choices":[{"index":0,"delta":{"content":"  \"Привет 👋\n"}}]}"# + "\n\n"
+            + #"data: {"choices":[{"index":0,"delta":{"content":"мир\"  "},"finish_reason":"stop"}]}"# + "\n\ndata: [DONE]\n\n"
+        URLProtocolStub.handler = { request in
+            calls.withLock { count += 1 }
+            let json = try JSONSerialization.jsonObject(with: requestBody(request)) as! [String: Any]
+            XCTAssertEqual(json["stream"] as? Bool, true)
+            return .init(headers: ["Content-Type": "text/event-stream; charset=utf-8"], body: Data(body.utf8), chunkSize: 1)
+        }
+        let result = try await makeClient().clean(text: "SOURCE", baseURL: URL(string: "https://example.com")!, model: "model", apiKey: "key", partialPreviewEnabled: true, onPreview: { previews.append($0) })
+        XCTAssertEqual(result, "Привет 👋\nмир")
+        XCTAssertEqual(previews.values.last, "  \"Привет 👋\nмир\"  ")
+        XCTAssertEqual(calls.withLock { count }, 1)
+    }
+
+    func testStreamingModeAcceptsSameAttemptJSONWithoutPreviewOrSecondPOST() async throws {
+        let previews = LockedMessages()
+        let lock = NSLock()
+        var count = 0
+        URLProtocolStub.handler = { _ in
+            lock.withLock { count += 1 }
+            return .json(#"{"choices":[{"message":{"content":"  \"Готово\"  "}}]}"#)
+        }
+        let result = try await makeClient().clean(text: "SOURCE", baseURL: URL(string: "https://example.com")!, model: "model", apiKey: "key", partialPreviewEnabled: true, onPreview: { previews.append($0) })
+        XCTAssertEqual(result, "Готово")
+        XCTAssertTrue(previews.values.isEmpty)
+        XCTAssertEqual(lock.withLock { count }, 1)
+    }
+
+    func testStreamingModeRejectsUnknownTypeAndIncompleteBodyWithoutResend() async {
+        for (type, body) in [("text/plain", "anything"), ("application/json", "broken"), ("text/event-stream", #"data: {"choices":[{"index":0,"delta":{"content":"partial"}}]}"# + "\n\n")] {
+            let lock = NSLock()
+            var count = 0
+            URLProtocolStub.handler = { _ in
+                lock.withLock { count += 1 }
+                return .init(headers: ["Content-Type": type], body: Data(body.utf8))
+            }
+            do {
+                _ = try await makeClient().clean(text: "SOURCE", baseURL: URL(string: "https://example.com")!, model: "model", apiKey: "key", partialPreviewEnabled: true)
+                XCTFail("Invalid stream accepted")
+            } catch { XCTAssertEqual(error as? APIError, .invalidStreamingResponse) }
+            XCTAssertEqual(lock.withLock { count }, 1)
+        }
+    }
+
+    func testStreamingRawBodyLimitIncludesIgnoredSSEOverhead() async throws {
+        let stop = #"data: {"choices":[{"index":0,"delta":{"content":"done"},"finish_reason":"stop"}]}"# + "\n\ndata: [DONE]\n\n"
+        let padding = 4 * 1_024 * 1_024 - stop.utf8.count
+        let exact = Data((String(repeating: ":\n\n", count: padding/3) + String(repeating: "\n", count: padding % 3) + stop).utf8)
+        for (body, accepted) in [(exact, true), (exact + Data([10]), false)] {
+            URLProtocolStub.handler = { _ in .init(headers: ["Content-Type": "text/event-stream"], body: body, chunkSize: 65536) }
+            do {
+                let result = try await makeClient().clean(text: "SOURCE", baseURL: URL(string: "https://example.com")!, model: "model", apiKey: "key", partialPreviewEnabled: true)
+                XCTAssertTrue(accepted)
+                XCTAssertEqual(result, "done")
+            } catch { XCTAssertFalse(accepted); XCTAssertEqual(error as? APIError, .responseTooLarge) }
+        }
+    }
+
+
+    func testConfirmedMarkersStillRequireSuccessfulTransportAndTLSAfterBytesNeverRetries() async {
+        for code in [URLError.Code.secureConnectionFailed, .networkConnectionLost] {
+            let previews = LockedMessages()
+            let fragmentReceived = DispatchSemaphore(value: 0)
+            let lock = NSLock()
+            var count = 0
+            let body = #"data: {"choices":[{"index":0,"delta":{"content":"partial"},"finish_reason":"stop"}]}"# + "\n\ndata: [DONE]\n\n"
+            URLProtocolStub.handler = { _ in
+                lock.withLock { count += 1 }
+                return .init(headers: ["Content-Type": "text/event-stream"], body: Data(body.utf8), errorAfterBody: URLError(code), failAfterPreview: fragmentReceived)
+            }
+            do {
+                _ = try await makeClient().clean(text: "SOURCE", baseURL: URL(string: "https://example.com")!, model: "model", apiKey: "key", partialPreviewEnabled: true, onPreview: { previews.append($0); fragmentReceived.signal() })
+                XCTFail("Transport failure must reject final markers")
+            } catch {
+                if case .transport = error as? APIError {} else { XCTFail("Unexpected error: \(error)") }
+            }
+            XCTAssertEqual(previews.values, ["partial"])
+            XCTAssertEqual(lock.withLock { count }, 1)
+        }
+    }
+
+    func testPreviewCallbackCanCancelItsOwnRequestWithoutDeadlock() async {
+        let cancellation = LockedCancellationTask()
+        let preview = expectation(description: "Raw preview invokes cancellation")
+        let body = #"data: {"choices":[{"index":0,"delta":{"content":"partial"}}]}"# + "\n\n"
+        URLProtocolStub.handler = { _ in .init(headers: ["Content-Type": "text/event-stream"], body: Data(body.utf8)) }
+        let client = makeClient()
+        let request = Task {
+            try await client.clean(text: "SOURCE", baseURL: URL(string: "https://example.com")!, model: "model", apiKey: "key", partialPreviewEnabled: true, onPreview: { _ in
+                cancellation.cancel()
+                preview.fulfill()
+            })
+        }
+        cancellation.store(request)
+        await fulfillment(of: [preview], timeout: 2)
+        do { _ = try await request.value; XCTFail("Cancelled request accepted") }
+        catch { XCTAssertEqual(error as? APIError, .cancelled) }
+    }
+
     private func makeClient() -> OpenAICompatibleClient {
         OpenAICompatibleClient(protocolClasses: [URLProtocolStub.self])
     }
@@ -694,19 +798,25 @@ private final class URLProtocolStub: URLProtocol, @unchecked Sendable {
         let body: Data
         let chunkSize: Int?
         let redirectRequest: URLRequest?
+        let errorAfterBody: (any Error)?
+        let failAfterPreview: DispatchSemaphore?
 
         init(
             statusCode: Int = 200,
             headers: [String: String] = ["Content-Type": "application/json"],
             body: Data,
             chunkSize: Int? = nil,
-            redirectRequest: URLRequest? = nil
+            redirectRequest: URLRequest? = nil,
+            errorAfterBody: (any Error)? = nil,
+            failAfterPreview: DispatchSemaphore? = nil
         ) {
             self.statusCode = statusCode
             self.headers = headers
             self.body = body
             self.chunkSize = chunkSize
             self.redirectRequest = redirectRequest
+            self.errorAfterBody = errorAfterBody
+            self.failAfterPreview = failAfterPreview
         }
 
         static func json(_ value: String) -> Stub {
@@ -782,7 +892,18 @@ private final class URLProtocolStub: URLProtocol, @unchecked Sendable {
             } else if !stub.body.isEmpty {
                 client?.urlProtocol(self, didLoad: stub.body)
             }
-            client?.urlProtocolDidFinishLoading(self)
+            if let error = stub.errorAfterBody {
+                if let gate = stub.failAfterPreview {
+                    DispatchQueue.global().async { [self] in
+                        _ = gate.wait(timeout: .now() + 2)
+                        client?.urlProtocol(self, didFailWithError: error)
+                    }
+                } else {
+                    client?.urlProtocol(self, didFailWithError: error)
+                }
+            } else {
+                client?.urlProtocolDidFinishLoading(self)
+            }
         } catch {
             client?.urlProtocol(self, didFailWithError: error)
         }
@@ -827,4 +948,11 @@ private final class LockedMessages: @unchecked Sendable {
             storage.append(message)
         }
     }
+}
+
+private final class LockedCancellationTask: @unchecked Sendable {
+    private let lock = NSLock()
+    private var task: Task<String, any Error>?
+    func store(_ task: Task<String, any Error>) { lock.withLock { self.task = task } }
+    func cancel() { lock.withLock { task }?.cancel() }
 }

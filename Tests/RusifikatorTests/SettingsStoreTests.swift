@@ -11,6 +11,7 @@ final class SettingsStoreTests: XCTestCase {
 
         XCTAssertEqual(store.providerURLString, "https://liteapi.gotacat.dev/")
         XCTAssertEqual(store.model, "proxy/gpt-5.6-terra")
+        XCTAssertFalse(store.partialPreviewEnabled)
     }
 
     func testSettingsPersistAndResetWithoutTextFields() {
@@ -20,16 +21,19 @@ final class SettingsStoreTests: XCTestCase {
 
         store.providerURLString = "https://example.com/api/"
         store.model = "example/model"
+        store.partialPreviewEnabled = true
 
         let restored = SettingsStore(defaults: defaults)
         XCTAssertEqual(restored.providerURLString, "https://example.com/api/")
         XCTAssertEqual(restored.model, "example/model")
+        XCTAssertTrue(restored.partialPreviewEnabled)
         XCTAssertNil(defaults.object(forKey: "sourceText"))
         XCTAssertNil(defaults.object(forKey: "resultText"))
 
         restored.reset()
         XCTAssertEqual(restored.providerURLString, "https://liteapi.gotacat.dev/")
         XCTAssertEqual(restored.model, "proxy/gpt-5.6-terra")
+        XCTAssertFalse(restored.partialPreviewEnabled)
     }
 
     func testCanonicalHTTPSOriginDropsPathQueryAndDefaultPort() throws {

@@ -8,10 +8,18 @@ struct EditorRequest: Equatable, Sendable {
     let model: String
     let apiKey: String
     let systemPrompt: String
+    var partialPreviewEnabled: Bool = false
 }
 
 protocol EditorAPIClient: Sendable {
     func clean(_ request: EditorRequest) async throws -> String
+    func clean(_ request: EditorRequest, onPreview: @escaping @Sendable (String) -> Void) async throws -> String
+}
+
+extension EditorAPIClient {
+    func clean(_ request: EditorRequest, onPreview: @escaping @Sendable (String) -> Void) async throws -> String {
+        try await clean(request)
+    }
 }
 
 struct OpenAIEditorAPIClient: EditorAPIClient {
@@ -22,13 +30,19 @@ struct OpenAIEditorAPIClient: EditorAPIClient {
     }
 
     func clean(_ request: EditorRequest) async throws -> String {
+        try await clean(request, onPreview: { _ in })
+    }
+
+    func clean(_ request: EditorRequest, onPreview: @escaping @Sendable (String) -> Void) async throws -> String {
         try await client.clean(
             text: request.source,
             baseURL: request.baseURL,
             model: request.model,
             apiKey: request.apiKey,
             systemPrompt: request.systemPrompt,
-            requestID: request.id
+            requestID: request.id,
+            partialPreviewEnabled: request.partialPreviewEnabled,
+            onPreview: onPreview
         )
     }
 }
@@ -46,6 +60,7 @@ final class EditorViewModel {
     enum LoadingPhase: Equatable { case preparingCredentials, requesting }
     private(set) var loadingPhase: LoadingPhase?
     private(set) var isShuttingDown = false
+    private(set) var previewText = ""
     private(set) var result: String?
     private(set) var errorMessage: String?
     private(set) var copiedConfirmationVisible = false
@@ -67,6 +82,9 @@ final class EditorViewModel {
 
     @ObservationIgnored
     private var activeRequestID: UUID?
+
+    @ObservationIgnored
+    private var previewPublication: PreviewPublication?
 
     @ObservationIgnored
     private var copyConfirmationID: UUID?
@@ -124,6 +142,7 @@ final class EditorViewModel {
     func submit(
         baseURL: URL,
         model: String,
+        partialPreviewEnabled: Bool = false,
         credentials override: (any AsyncCredentialStoring)? = nil,
         systemPrompt: String = FixedSystemPrompt.text
     ) {
@@ -132,6 +151,13 @@ final class EditorViewModel {
         let sourceSnapshot = source
         let credentials = override ?? self.credentials
         activeRequestID = id
+        previewText = ""
+        let publication = PreviewPublication { [weak self] text in
+            guard let self, self.activeRequestID == id, self.state == .loading,
+                  !self.isShuttingDown else { return }
+            self.previewText = text
+        }
+        previewPublication = publication
         result = nil
         errorMessage = nil
         hideCopyConfirmation()
@@ -148,10 +174,13 @@ final class EditorViewModel {
                 }
                 let request = EditorRequest(
                     id: id, source: sourceSnapshot, baseURL: baseURL,
-                    model: model, apiKey: key, systemPrompt: systemPrompt
+                    model: model, apiKey: key, systemPrompt: systemPrompt,
+                    partialPreviewEnabled: partialPreviewEnabled
                 )
                 self.loadingPhase = .requesting
-                let result = try await apiClient.clean(request)
+                let result = try await apiClient.clean(request, onPreview: { text in
+                    if partialPreviewEnabled { publication.receive(text) }
+                })
                 guard !Task.isCancelled else { return }
                 self.finish(id: id, source: sourceSnapshot, with: .success(result))
             } catch {
@@ -271,6 +300,9 @@ final class EditorViewModel {
             return
         }
 
+        previewPublication?.cancel()
+        previewPublication = nil
+        previewText = ""
         activeRequestID = nil
         loadingPhase = nil
         requestTask = nil
@@ -295,6 +327,9 @@ final class EditorViewModel {
     }
 
     private func invalidateActiveRequest() {
+        previewPublication?.cancel()
+        previewPublication = nil
+        previewText = ""
         activeRequestID = nil
         loadingPhase = nil
         requestTask?.cancel()

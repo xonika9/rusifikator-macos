@@ -54,6 +54,8 @@ Before the first run, open the settings, enter your API key and press Save. The 
 
 From there the loop is simple: paste the transcript, run the cleanup, copy the result. The connection test next to the settings sends a short service string and reports whether the provider answers, without saving the draft values from the window.
 
+Settings include an optional “Частичный показ” mode for reading the text while processing continues. It is off by default. Preview text cannot be selected or copied; only the confirmed final answer enters history. Cancellation, an error or an incomplete response clears the preview. A regular complete response from the server is accepted without resending the request. For an incompatible response, turn the mode off manually before trying again: the application never resends the text automatically to switch modes.
+
 If a VPN drops the secure connection before the text is sent, the application
 retries once. If the connection still fails, the error message points to the VPN
 or server as the likely cause.
@@ -78,7 +80,7 @@ Updating is refused while the application runs from a mounted disk image or a qu
 
 ## Privacy
 
-- The provider endpoint and the model live in `UserDefaults`; the API key lives only in the Keychain, bound to the provider's HTTPS origin. Changing providers requires entering the key again.
+- The provider endpoint, model and partial preview preference live in `UserDefaults`; the API key lives only in the Keychain, bound to the provider's HTTPS origin. Changing providers requires entering the key again.
 - A request carries the system prompt and the current field text. Local history is never appended to a request.
 - The last five source/result pairs are kept in a JSON file inside Application Support. History can be erased from the application; it never reaches analytics or logs.
 - The update check talks only to the update channel and sends no text, no settings and no API key.
