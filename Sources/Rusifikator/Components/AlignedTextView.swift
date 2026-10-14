@@ -17,6 +17,8 @@ struct AlignedTextView: NSViewRepresentable {
 
     let placeholder: String
     let isEditable: Bool
+    let isSelectable: Bool
+    let preservesScrollPosition: Bool
     let trailingAccessoryButton: TextAccessoryButton?
 
     init(
@@ -24,12 +26,16 @@ struct AlignedTextView: NSViewRepresentable {
         isFocused: Binding<Bool> = .constant(false),
         placeholder: String = "",
         isEditable: Bool = true,
+        isSelectable: Bool = true,
+        preservesScrollPosition: Bool = false,
         trailingAccessoryButton: TextAccessoryButton? = nil
     ) {
         _text = text
         _isFocused = isFocused
         self.placeholder = placeholder
         self.isEditable = isEditable
+        self.isSelectable = isSelectable
+        self.preservesScrollPosition = preservesScrollPosition
         self.trailingAccessoryButton = trailingAccessoryButton
     }
 
@@ -53,9 +59,17 @@ struct AlignedTextView: NSViewRepresentable {
         updateDynamicProperties(container)
 
         if container.textView.string != text {
+            let clip = container.scrollView.contentView
+            let previousOrigin = clip.bounds.origin
             container.textView.string = text
             container.textView.undoManager?.removeAllActions()
             container.layOutWholeText()
+            if preservesScrollPosition {
+                var bounds = clip.bounds
+                bounds.origin = previousOrigin
+                clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
+                container.scrollView.reflectScrolledClipView(clip)
+            }
         }
 
         guard isEditable, let window = container.window else {
@@ -83,6 +97,9 @@ struct AlignedTextView: NSViewRepresentable {
         container.trailingAccessoryButton = trailingAccessoryButton
         if textView.isEditable != isEditable {
             textView.isEditable = isEditable
+        }
+        if textView.isSelectable != isSelectable {
+            textView.isSelectable = isSelectable
         }
         textView.setAccessibilityPlaceholderValue(placeholder)
 
@@ -324,6 +341,30 @@ final class AccessoryCursorView: NSView {
 /// должно уступать угол с кнопкой само.
 final class AccessoryAwareTextView: NSTextView {
     weak var accessoryHost: AlignedTextContainer?
+
+    override var acceptsFirstResponder: Bool {
+        (isEditable || isSelectable) && super.acceptsFirstResponder
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        guard isEditable || isSelectable else { return false }
+        return super.becomeFirstResponder()
+    }
+
+    override func copy(_ sender: Any?) {
+        guard isSelectable else { return }
+        super.copy(sender)
+    }
+
+    override func selectAll(_ sender: Any?) {
+        guard isSelectable else { return }
+        super.selectAll(sender)
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        guard isSelectable else { return nil }
+        return super.menu(for: event)
+    }
 
     override func mouseMoved(with event: NSEvent) {
         guard applyAccessoryCursor(for: event) else {

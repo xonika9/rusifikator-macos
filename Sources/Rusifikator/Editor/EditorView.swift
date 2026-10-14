@@ -195,12 +195,14 @@ struct EditorView: View {
     private var resultSurface: some View {
         Group {
             switch editor.state {
-            case .loading:
-                if editor.previewText.isEmpty { loadingResult } else { previewResult }
+            case .loading, .success:
+                if editor.state == .success || !editor.previewText.isEmpty {
+                    textResult
+                } else {
+                    loadingResult
+                }
             case .error:
                 errorResult
-            case .success:
-                successResult
             case .cancelled:
                 cancelledResult
             case .empty, .ready:
@@ -251,27 +253,6 @@ struct EditorView: View {
         .accessibilityLabel("Текст обрабатывается")
     }
 
-    private var previewResult: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text("Предварительный текст · ответ ещё не завершён")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(AppTheme.textSoft)
-            PreviewTextSurface(text: editor.previewText)
-                .accessibilityLabel("Предварительный текст, копирование недоступно")
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(AppTheme.surface, in: RoundedRectangle(cornerRadius: 8))
-        .overlay { RoundedRectangle(cornerRadius: 8).stroke(AppTheme.line, lineWidth: 1) }
-        .overlay(alignment: .topTrailing) {
-            CopyTextButton(isConfirming: false, surface: AppTheme.surface) {
-                editor.copyResult()
-            }
-            .disabled(true)
-            .padding(TextSurfaceAccessory.inset)
-        }
-    }
-
     private var errorResult: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Не удалось обработать текст")
@@ -318,22 +299,39 @@ struct EditorView: View {
         }
     }
 
-    private var successResult: some View {
+    private var textResult: some View {
         AlignedTextView(
-            text: .constant(editor.result ?? ""),
+            text: .constant(editor.state == .success ? editor.result ?? "" : editor.previewText),
             isEditable: false,
+            isSelectable: editor.canCopy,
+            preservesScrollPosition: true,
             trailingAccessoryButton: Self.accessoryButton(
                 isEnabled: editor.canCopy
             )
         )
         .overlay(alignment: .topTrailing) {
-            CopyTextButton(
-                isConfirming: editor.copiedConfirmationVisible,
-                surface: AppTheme.surface
-            ) {
-                editor.copyResult()
+            Group {
+                if editor.state == .loading {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(width: TextSurfaceAccessory.size, height: TextSurfaceAccessory.size)
+                        .background {
+                            TextSurfaceVeil(surface: AppTheme.surface)
+                                .padding(-6)
+                        }
+                        .allowsHitTesting(false)
+                        .help("Ответ ещё готовится; копирование пока недоступно")
+                        .accessibilityLabel("Ответ ещё готовится")
+                } else {
+                    CopyTextButton(
+                        isConfirming: editor.copiedConfirmationVisible,
+                        surface: AppTheme.surface
+                    ) {
+                        editor.copyResult()
+                    }
+                    .disabled(!editor.canCopy)
+                }
             }
-            .disabled(!editor.canCopy)
             .padding(TextSurfaceAccessory.inset)
         }
         .background(AppTheme.surface)
@@ -342,7 +340,7 @@ struct EditorView: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(AppTheme.line, lineWidth: 1)
         }
-        .accessibilityLabel("Готовый текст")
+        .accessibilityLabel(editor.canCopy ? "Готовый текст" : "Предварительный текст, копирование недоступно")
     }
 
     @ViewBuilder
