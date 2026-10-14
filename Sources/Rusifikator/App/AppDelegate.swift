@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var updaterStartupID: UUID?
     private var isTerminating = false
     private let scheduleUpdater: (@escaping @MainActor () -> Void) -> Task<Void, Never>
+    private let replyToTermination: (NSApplication, Bool) -> Void
     private let makeUpdater: (@escaping (UpdateReport) -> Void) -> any UpdateStarting
 
     override convenience init() {
@@ -38,11 +39,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         makeUpdater: @escaping (@escaping (UpdateReport) -> Void) -> any UpdateStarting,
         scheduleUpdater: @escaping (@escaping @MainActor () -> Void) -> Task<Void, Never> = { operation in
             Task { @MainActor in operation() }
+        },
+        replyToTermination: @escaping (NSApplication, Bool) -> Void = { sender, allowed in
+            sender.reply(toApplicationShouldTerminate: allowed)
         }
     ) {
         self.credentials = credentials
         self.makeUpdater = makeUpdater
         self.scheduleUpdater = scheduleUpdater
+        self.replyToTermination = replyToTermination
         self.history = history
         let client = OpenAICompatibleClient(sessionOwner: networkSessions)
         editor = EditorViewModel(apiClient: OpenAIEditorAPIClient(client: client), credentials: credentials, history: history)
@@ -80,7 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             await settings.flushStartedSave()
             await history.flushPendingPersistence()
             await networkSessions.drain()
-            sender.reply(toApplicationShouldTerminate: true)
+            replyToTermination(sender, true)
         }
         return .terminateLater
     }

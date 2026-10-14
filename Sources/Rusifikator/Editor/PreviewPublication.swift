@@ -7,9 +7,11 @@ final class PreviewPublication: @unchecked Sendable {
     private var latest: String?
     private var delivery: Task<Void, Never>?
     private var closed = false
+    private let clock: any NetworkClock
     private let publish: @MainActor @Sendable (String) -> Void
 
-    init(publish: @escaping @MainActor @Sendable (String) -> Void) {
+    init(clock: any NetworkClock = ContinuousNetworkClock(), publish: @escaping @MainActor @Sendable (String) -> Void) {
+        self.clock = clock
         self.publish = publish
     }
 
@@ -22,7 +24,7 @@ final class PreviewPublication: @unchecked Sendable {
                 guard let self else { return }
                 while !Task.isCancelled {
                     guard self.deliverLatest() else { break }
-                    do { try await Task.sleep(for: .milliseconds(100)) }
+                    do { try await self.clock.sleep(until: self.clock.now.advanced(by: .milliseconds(100))) }
                     catch { break }
                     let hasMore = self.lock.withLock { () -> Bool in
                         if self.latest != nil && !self.closed { return true }

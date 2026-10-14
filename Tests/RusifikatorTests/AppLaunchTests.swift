@@ -104,15 +104,43 @@ final class AppLaunchTests: XCTestCase {
         delegate.applicationWillTerminate(Notification(name: NSApplication.willTerminateNotification))
     }
 
-    func testTerminationCancelsPendingUpdaterEvenIfSchedulerDeliversLate() {
+    func testTerminationCancelsPendingUpdaterEvenIfSchedulerDeliversLate() async {
         let scheduler = LaunchScheduler()
         var created = 0
-        let delegate = makeDelegate(makeUpdater: { _ in created += 1; return LaunchUpdater() }, scheduler: scheduler)
+        let replied = expectation(description: "Termination reply received by isolated sink")
+        var replies = 0
+        var writeCompleted = false
+        let premature = expectation(description: "Reply must wait for pending history write")
+        premature.isInverted = true
+        let persistence = TerminationHistory()
+        let history = HistoryStore(persistence: persistence)
+        await history.waitForInitialLoad()
+        history.record(source: "synthetic", result: "synthetic")
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while !(await persistence.isWriting) && ContinuousClock.now < deadline { await Task.yield() }
+        let writing = await persistence.isWriting
+        XCTAssertTrue(writing)
+        let delegate = makeDelegate(makeUpdater: { _ in created += 1; return LaunchUpdater() },
+                                    scheduler: scheduler, history: history,
+                                    replyToTermination: { sender, allowed in
+            XCTAssertTrue(sender === NSApplication.shared)
+            XCTAssertTrue(allowed)
+            replies += 1
+            if !writeCompleted { premature.fulfill() }
+            replied.fulfill()
+        })
         delegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
         XCTAssertEqual(delegate.applicationShouldTerminate(NSApplication.shared), .terminateLater)
         scheduler.run()
         XCTAssertEqual(created, 0)
         XCTAssertFalse(delegate.updates.isAvailable)
+        XCTAssertTrue(delegate.editor.isShuttingDown)
+        await fulfillment(of: [premature], timeout: 0.05)
+        XCTAssertEqual(replies, 0, "Reply must await the pending history write")
+        writeCompleted = true
+        await persistence.complete()
+        await fulfillment(of: [replied], timeout: 2)
+        XCTAssertEqual(replies, 1)
         delegate.applicationWillTerminate(Notification(name: NSApplication.willTerminateNotification))
     }
 
@@ -139,12 +167,16 @@ final class AppLaunchTests: XCTestCase {
 
     private func makeDelegate(
         makeUpdater: @escaping (@escaping (UpdateReport) -> Void) -> any UpdateStarting = { _ in LaunchUpdater() },
-        scheduler: LaunchScheduler? = nil
+        scheduler: LaunchScheduler? = nil,
+        history suppliedHistory: HistoryStore? = nil,
+        replyToTermination: @escaping (NSApplication, Bool) -> Void = { _, _ in
+            XCTFail("Unexpected termination reply")
+        }
     ) -> AppDelegate {
         _ = NSApplication.shared
         let credentials = AsyncCredentialStore(makeStore: { LaunchCredentials() })
         let defaults = UserDefaults(suiteName: "rusifikator-launch-\(UUID().uuidString)")!
-        let history = HistoryStore(persistence: LaunchHistory())
+        let history = suppliedHistory ?? HistoryStore(persistence: LaunchHistory())
         let settingsStore = SettingsStore(defaults: defaults)
         let loginItem = LoginItemController(service: LaunchLoginItem())
         if let scheduler {
@@ -154,7 +186,8 @@ final class AppLaunchTests: XCTestCase {
                 settingsStore: settingsStore,
                 loginItem: loginItem,
                 makeUpdater: makeUpdater,
-                scheduleUpdater: scheduler.schedule
+                scheduleUpdater: scheduler.schedule,
+                replyToTermination: replyToTermination
             )
         }
         return AppDelegate(
@@ -162,7 +195,8 @@ final class AppLaunchTests: XCTestCase {
             history: history,
             settingsStore: settingsStore,
             loginItem: loginItem,
-            makeUpdater: makeUpdater
+            makeUpdater: makeUpdater,
+            replyToTermination: replyToTermination
         )
     }
 }
@@ -204,5 +238,18 @@ private struct LaunchHistory: HistoryPersisting {
         let pending = operations
         operations = []
         pending.forEach { $0() }
+    }
+}
+
+private actor TerminationHistory: HistoryPersisting {
+    private var continuation: CheckedContinuation<Void, Never>?
+    var isWriting: Bool { continuation != nil }
+    func load(maximumEntryCount: Int) async -> [HistoryEntry] { [] }
+    func persist(_ entries: [HistoryEntry], generation: Int) async throws {
+        await withCheckedContinuation { continuation = $0 }
+    }
+    func complete() {
+        continuation?.resume()
+        continuation = nil
     }
 }

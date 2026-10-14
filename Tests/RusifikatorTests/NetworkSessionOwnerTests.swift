@@ -27,17 +27,22 @@ final class NetworkSessionOwnerTests: XCTestCase {
         let fifth = Task {
             try await owner.acquire(origin: self.origin("https://five.invalid"), timeout: 90)
         }
+        try await waitForAdmission(in: owner)
         fifth.cancel()
         do {
             _ = try await fifth.value
             XCTFail("Cancelled admission must fail")
         } catch { XCTAssertEqual(error as? APIError, .cancelled) }
-        let firstAgain = try await owner.acquire(origin: origin("https://one.invalid"), timeout: 90)
-        XCTAssertTrue(firstAgain.session === leases[0].session)
-        firstAgain.release()
+        XCTAssertEqual(try pendingAdmissionCount(in: owner), 0)
+        for (index, host) in ["one", "two", "three", "four"].enumerated() {
+            let again = try await owner.acquire(origin: origin("https://\(host).invalid"), timeout: 90)
+            XCTAssertTrue(again.session === leases[index].session)
+            again.release()
+        }
         let replacement = Task {
             try await owner.acquire(origin: self.origin("https://five.invalid"), timeout: 90)
         }
+        try await waitForAdmission(in: owner)
         leases.removeLast().release()
         let admitted = try await replacement.value
         let stillFirst = try await owner.acquire(origin: origin("https://one.invalid"), timeout: 90)
@@ -358,8 +363,76 @@ final class NetworkSessionOwnerTests: XCTestCase {
         await owner.drain()
     }
 
+    func testEditorShutdownDuringRealStreamRejectsLateDataAndDrainsAfterInvalidation() async throws {
+        let owner = NetworkSessionOwner(protocolClasses: [ControlledNetworkProtocol.self])
+        let events = NetworkEvents()
+        let started = expectation(description: "Streaming request delivered")
+        ControlledNetworkProtocol.prepare { _ in started.fulfill() }
+        defer { ControlledNetworkProtocol.reset(); owner.close() }
+        let client = OpenAICompatibleClient(sessionOwner: owner, diagnosticSink: { events.append($0) })
+        let editor = EditorViewModel(apiClient: OpenAIEditorAPIClient(client: client),
+                                     credentials: StreamCredentials(), clipboard: StreamClipboard())
+        let url = try XCTUnwrap(URL(string: "https://synthetic.invalid"))
+        let lease = try await owner.acquire(origin: origin(url.absoluteString), timeout: 90)
+        editor.source = "synthetic source"
+        editor.submit(baseURL: url, model: "model", partialPreviewEnabled: true, systemPrompt: "SYSTEM")
+        await fulfillment(of: [started], timeout: 2)
+        ControlledNetworkProtocol.beginResponse(authorization: "Bearer synthetic", streaming: true)
+        ControlledNetworkProtocol.fragment(authorization: "Bearer synthetic", bytes: Data("data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"first\"}}]}\n\n".utf8))
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while editor.previewText != "first" && ContinuousClock.now < deadline { await Task.yield() }
+        XCTAssertEqual(editor.previewText, "first", "Real adapter/parser/publication must deliver the first delta")
+        let lateData = try XCTUnwrap(ControlledNetworkProtocol.captureLateFragment(
+            authorization: "Bearer synthetic",
+            bytes: Data("data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"late\"}}]}\n\ndata: [DONE]\n\n".utf8)))
+        let queue = try XCTUnwrap(lease.session.delegateQueue.underlyingQueue)
+        let allowed = LockedPermission()
+        queue.suspend()
+        defer { if !allowed.value { queue.resume() } }
+        editor.beginShutdown()
+        owner.close()
+        lateData()
+        lease.release()
+        let premature = expectation(description: "Drain must wait for real invalidation callback")
+        premature.isInverted = true
+        let drain = Task {
+            await owner.drain()
+            if !allowed.value { premature.fulfill() }
+        }
+        await fulfillment(of: [premature], timeout: 0.05)
+        XCTAssertTrue(editor.isShuttingDown)
+        XCTAssertEqual(editor.previewText, "")
+        XCTAssertNil(editor.result)
+        XCTAssertFalse(editor.canSubmit)
+        allowed.allow()
+        queue.resume()
+        await drain.value
+        XCTAssertEqual(editor.previewText, "", "Late transport callback must not restore a preview")
+        XCTAssertNil(editor.result)
+        XCTAssertNil(editor.errorMessage)
+        XCTAssertEqual(ControlledNetworkProtocol.requests.count, 1)
+        XCTAssertEqual(ControlledNetworkProtocol.stoppedCount, 1)
+        XCTAssertEqual(events.values.filter { if case .completed = $0 { return true }; return false }.count, 1)
+    }
+
     private func origin(_ url: String) throws -> ProviderOrigin {
         try ProviderOrigin(url: XCTUnwrap(URL(string: url)))
+    }
+
+    private func pendingAdmissionCount(in owner: NetworkSessionOwner) throws -> Int {
+        let lock = try XCTUnwrap(Mirror(reflecting: owner).children.first { $0.label == "lock" }?.value as? NSLock)
+        return try lock.withLock {
+            let admissions = try XCTUnwrap(Mirror(reflecting: owner).children.first { $0.label == "admissions" })
+            return Mirror(reflecting: admissions.value).children.count
+        }
+    }
+
+    private func waitForAdmission(in owner: NetworkSessionOwner) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while try pendingAdmissionCount(in: owner) == 0 && ContinuousClock.now < deadline {
+            await Task.yield()
+        }
+        XCTAssertEqual(try pendingAdmissionCount(in: owner), 1)
     }
 }
 
@@ -392,9 +465,13 @@ private final class ControlledNetworkProtocol: URLProtocol, @unchecked Sendable 
         if target == nil { XCTFail("Expected matching delivered request") }
         return target
     }
-    static func beginResponse(authorization: String) {
+    static func captureLateFragment(authorization: String, bytes: Data) -> (@Sendable () -> Void)? {
+        guard let target = target(authorization), let client = target.client else { return nil }
+        return { client.urlProtocol(target, didLoad: bytes) }
+    }
+    static func beginResponse(authorization: String, streaming: Bool = false) {
         guard let target = target(authorization) else { return }
-        target.client?.urlProtocol(target, didReceive: HTTPURLResponse(url: target.request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: [:])!, cacheStoragePolicy: .notAllowed)
+        target.client?.urlProtocol(target, didReceive: HTTPURLResponse(url: target.request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: streaming ? ["Content-Type": "text/event-stream"] : [:])!, cacheStoragePolicy: .notAllowed)
     }
     static func fragment(authorization: String, bytes: Data) {
         guard let target = target(authorization) else { return }
@@ -428,7 +505,7 @@ private final class ControlledNetworkProtocol: URLProtocol, @unchecked Sendable 
     }
 }
 
-private final class ManualNetworkClock: NetworkClock, @unchecked Sendable {
+final class ManualNetworkClock: NetworkClock, @unchecked Sendable {
     private struct Sleeper {
         let deadline: ContinuousClock.Instant
         let continuation: CheckedContinuation<Void, Error>
@@ -438,6 +515,7 @@ private final class ManualNetworkClock: NetworkClock, @unchecked Sendable {
     private var sleepers: [UUID: Sleeper] = [:]
     private var observer: (@Sendable () -> Void)?
     var now: ContinuousClock.Instant { lock.withLock { instant } }
+    var sleepingCount: Int { lock.withLock { sleepers.count } }
     var onSleep: (@Sendable () -> Void)? {
         get { lock.withLock { observer } }
         set { lock.withLock { observer = newValue } }
@@ -478,4 +556,13 @@ private final class LockedPermission: @unchecked Sendable {
     private var allowed = false
     var value: Bool { lock.withLock { allowed } }
     func allow() { lock.withLock { allowed = true } }
+}
+
+private struct StreamCredentials: AsyncCredentialStoring {
+    func apiKey(for providerURL: URL) async throws -> String? { "synthetic" }
+    func saveAPIKey(_ apiKey: String, for providerURL: URL, operation: CredentialWriteOperation) async throws {}
+    func deleteAPIKey(operation: CredentialWriteOperation) async throws {}
+}
+@MainActor private struct StreamClipboard: ClipboardService {
+    func copy(_ string: String) { XCTFail("Shutdown must not copy a result") }
 }
