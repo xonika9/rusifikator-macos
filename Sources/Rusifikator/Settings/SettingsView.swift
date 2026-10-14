@@ -59,6 +59,7 @@ final class SettingsViewModel {
     }
     var draftAPIKey: String {
         didSet {
+            draftAPIKeyGeneration += 1
             updateDraftKeyOrigin(previousKey: oldValue)
             draftDidChange()
         }
@@ -99,6 +100,7 @@ final class SettingsViewModel {
     private var draftAPIKeyOrigin: ProviderOrigin?
 
     @ObservationIgnored private var draftGeneration = 0
+    @ObservationIgnored private var draftAPIKeyGeneration = 0
     @ObservationIgnored private var loadID: UUID?
     @ObservationIgnored private var loadTask: Task<Void, Never>?
     @ObservationIgnored private var activeWrite: CredentialWriteOperation?
@@ -155,7 +157,6 @@ final class SettingsViewModel {
     @discardableResult
     func save() async -> Bool {
         guard canChangeAppliedSettings else { return false }
-        invalidateCredentialLoad()
         let generation = draftGeneration
         let partialPreviewEnabled = draftPartialPreviewEnabled
         let operation = CredentialWriteOperation()
@@ -165,6 +166,7 @@ final class SettingsViewModel {
         do {
             let values = try validatedDraft()
             let key = try validatedDraftAPIKey(for: values.url)
+            invalidateCredentialLoad()
             let effectiveKey: String
             if !key.isEmpty {
                 try await credentials.saveAPIKey(key, for: values.url, operation: operation)
@@ -191,7 +193,7 @@ final class SettingsViewModel {
                 draftPartialPreviewEnabled = partialPreviewEnabled
                 draftAPIKey = effectiveKey
             }
-            saveState = .success
+            saveState = unchanged ? .success : .idle
             return unchanged && !isShuttingDown
         } catch {
             saveState = .failure(Self.userMessage(for: error))
@@ -320,7 +322,8 @@ final class SettingsViewModel {
             loadMessage = APIError.invalidURL.localizedDescription
             return
         }
-        let generation = draftGeneration
+        let keyGeneration = draftAPIKeyGeneration
+        let origin = try? ProviderOrigin(url: url)
         let id = UUID()
         loadID = id
         loadTask = Task { [weak self, credentials] in
@@ -334,7 +337,10 @@ final class SettingsViewModel {
             case let .success(key):
                 self.currentAPIKey = key
                 self.loadMessage = nil
-                if self.draftGeneration == generation {
+                // Unrelated draft edits keep this fresh key available; an
+                // explicit key edit (including clearing) or another origin does not.
+                if self.draftAPIKeyGeneration == keyGeneration,
+                   let origin, self.providerOrigin(for: self.draftProviderURL) == origin {
                     self.draftAPIKey = key
                     self.bindDraftKeyToCurrentOrigin()
                 }

@@ -606,6 +606,7 @@ final class SettingsViewModelTests: XCTestCase {
         let close = await save.value
         XCTAssertFalse(close)
         XCTAssertFalse(model.isSaving)
+        XCTAssertEqual(model.saveState, .idle, "Changed visible drafts must not be reported as saved")
         XCTAssertEqual(store.providerURLString, "https://saved.example/v1")
         XCTAssertEqual(store.model, "saved/model")
         XCTAssertTrue(store.partialPreviewEnabled)
@@ -639,6 +640,104 @@ final class SettingsViewModelTests: XCTestCase {
         await credentials.finishRead(1, key: "old-applied")
         await model.waitForInitialLoad()
         XCTAssertEqual(model.draftAPIKey, "after-discard")
+    }
+
+    func testInvalidSaveKeepsPendingCredentialLoadAvailableAfterModelCorrection() async {
+        let (defaults, suiteName) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = SettingsStore(defaults: defaults)
+        let credentials = ControlledSettingsCredentials()
+        let checker = RecordingConnectionChecker()
+        let model = SettingsViewModel(store: store, credentials: credentials,
+                                      connectionChecker: checker,
+                                      loginItem: LoginItemController(service: FakeSettingsLoginItemService()))
+        await credentials.waitForReads(1)
+        model.draftModel = ""
+        let close = await model.save()
+        XCTAssertFalse(close)
+        XCTAssertEqual(model.saveState, .failure("Укажи модель."))
+        XCTAssertEqual(store.model, SettingsStore.defaultModel)
+        model.draftModel = "corrected/model"
+        await credentials.finishRead(0, key: "stored-key")
+        await model.waitForInitialLoad()
+
+        XCTAssertEqual(model.currentAPIKey, "stored-key")
+        XCTAssertEqual(model.draftAPIKey, "stored-key")
+        model.checkConnection()
+        await waitForConnectionState(.success, model: model)
+        let call = await checker.recordedCall()
+        XCTAssertEqual(call?.apiKey, "stored-key")
+        XCTAssertEqual(call?.model, "corrected/model")
+    }
+
+    func testInitialAndDiscardLoadsSurviveUnrelatedDraftEditsForSameOrigin() async {
+        let (defaults, suiteName) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = SettingsStore(defaults: defaults)
+        let credentials = ControlledSettingsCredentials()
+        let checker = RecordingConnectionChecker()
+        let model = SettingsViewModel(store: store, credentials: credentials,
+                                      connectionChecker: checker,
+                                      loginItem: LoginItemController(service: FakeSettingsLoginItemService()))
+        for read in 0..<2 {
+            await credentials.waitForReads(read + 1)
+            model.draftModel = "edited/model"
+            model.draftPartialPreviewEnabled = true
+            model.draftProviderURL = "https://liteapi.gotacat.dev/v1"
+            await credentials.finishRead(read, key: "fresh-key")
+            await model.waitForInitialLoad()
+
+            XCTAssertEqual(model.draftAPIKey, "fresh-key")
+            XCTAssertEqual(model.currentAPIKey, "fresh-key")
+            XCTAssertEqual(model.draftModel, "edited/model")
+            XCTAssertTrue(model.draftPartialPreviewEnabled)
+            XCTAssertEqual(store.model, SettingsStore.defaultModel)
+            XCTAssertFalse(store.partialPreviewEnabled)
+            model.checkConnection()
+            await waitForConnectionState(.success, model: model)
+            let call = await checker.recordedCall()
+            XCTAssertEqual(call?.url.absoluteString, "https://liteapi.gotacat.dev/v1")
+            XCTAssertEqual(call?.apiKey, "fresh-key")
+            if read == 0 { model.discardDraftChanges() }
+        }
+    }
+
+    func testPendingCredentialLoadDoesNotRestoreExplicitlyClearedDraftKey() async {
+        let (defaults, suiteName) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let credentials = ControlledSettingsCredentials()
+        let model = SettingsViewModel(store: SettingsStore(defaults: defaults), credentials: credentials,
+                                      connectionChecker: RecordingConnectionChecker(),
+                                      loginItem: LoginItemController(service: FakeSettingsLoginItemService()))
+        await credentials.waitForReads(1)
+        model.draftAPIKey = ""
+        await credentials.finishRead(0, key: "stored-key")
+        await model.waitForInitialLoad()
+
+        XCTAssertEqual(model.draftAPIKey, "")
+        XCTAssertEqual(model.currentAPIKey, "stored-key")
+    }
+
+    func testPendingCredentialLoadDoesNotFillKeyIntoDifferentProviderOrigin() async {
+        let (defaults, suiteName) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let credentials = ControlledSettingsCredentials()
+        let checker = RecordingConnectionChecker()
+        let model = SettingsViewModel(store: SettingsStore(defaults: defaults), credentials: credentials,
+                                      connectionChecker: checker,
+                                      loginItem: LoginItemController(service: FakeSettingsLoginItemService()))
+        await credentials.waitForReads(1)
+        model.draftProviderURL = "https://other.example/v1"
+        await credentials.finishRead(0, key: "original-key")
+        await model.waitForInitialLoad()
+
+        XCTAssertEqual(model.draftAPIKey, "")
+        XCTAssertEqual(model.currentAPIKey, "original-key")
+        model.checkConnection()
+        await waitForConnectionState(.success, model: model)
+        let call = await checker.recordedCall()
+        XCTAssertEqual(call?.url.absoluteString, "https://other.example/v1")
+        XCTAssertEqual(call?.apiKey, "")
     }
 
     func testSameGenerationSaveAllowsCloseOnlyAfterSuccess() async {
