@@ -71,13 +71,17 @@ final class SettingsViewModel {
     private(set) var loginItemStatus: LoginItemController.Status
     private(set) var loginItemMessage: String?
 
+    private(set) var isSaving = false
+    private(set) var isLoadingCredentials = false
+    private(set) var isShuttingDown = false
+
     private(set) var currentAPIKey: String
 
     @ObservationIgnored
     private let store: SettingsStore
 
     @ObservationIgnored
-    private let credentials: any CredentialStore
+    private let credentials: any AsyncCredentialStoring
 
     @ObservationIgnored
     private let connectionChecker: any ConnectionChecking
@@ -94,9 +98,15 @@ final class SettingsViewModel {
     @ObservationIgnored
     private var draftAPIKeyOrigin: ProviderOrigin?
 
+    @ObservationIgnored private var draftGeneration = 0
+    @ObservationIgnored private var loadID: UUID?
+    @ObservationIgnored private var loadTask: Task<Void, Never>?
+    @ObservationIgnored private var activeWrite: CredentialWriteOperation?
+    @ObservationIgnored private var saveWaiters: [CheckedContinuation<Void, Never>] = []
+
     init(
         store: SettingsStore = SettingsStore(),
-        credentials: any CredentialStore = KeychainCredentialStore(),
+        credentials: any AsyncCredentialStoring = AsyncCredentialStore(),
         connectionChecker: any ConnectionChecking = OpenAICompatibleClient(),
         loginItem: LoginItemController = LoginItemController()
     ) {
@@ -111,26 +121,19 @@ final class SettingsViewModel {
         draftModel = model
         loginItemStatus = loginItem.status
 
-        if let url = URL(string: providerURL) {
-            do {
-                let apiKey = try credentials.apiKey(for: url) ?? ""
-                currentAPIKey = apiKey
-                draftAPIKey = apiKey
-            } catch {
-                currentAPIKey = ""
-                draftAPIKey = ""
-                loadMessage = Self.userMessage(for: error)
-            }
-        } else {
-            currentAPIKey = ""
-            draftAPIKey = ""
-            loadMessage = APIError.invalidURL.localizedDescription
-        }
-        bindDraftKeyToCurrentOrigin()
+        currentAPIKey = ""
+        draftAPIKey = ""
+        reloadCredential()
     }
 
+    func waitForInitialLoad() async {
+        await loadTask?.value
+    }
+
+    var canChangeAppliedSettings: Bool { !isSaving && !isShuttingDown }
+
     var canCheckConnection: Bool {
-        connectionTask == nil
+        connectionTask == nil && canChangeAppliedSettings
     }
 
     var loginItemIsEnabled: Bool {
@@ -142,53 +145,58 @@ final class SettingsViewModel {
     }
 
     func submit(_ editor: EditorViewModel) {
-        guard let baseURL = URL(string: store.providerURLString) else {
-            return
-        }
-
-        let apiKey: String
-        do {
-            apiKey = try credentials.apiKey(for: baseURL) ?? ""
-            loadMessage = nil
-        } catch {
-            apiKey = ""
-            loadMessage = Self.userMessage(for: error)
-        }
-
-        editor.submit(
-            baseURL: baseURL,
-            model: store.model,
-            apiKey: apiKey
-        )
+        guard canChangeAppliedSettings,
+              let baseURL = URL(string: store.providerURLString) else { return }
+        editor.submit(baseURL: baseURL, model: store.model, credentials: credentials)
     }
 
-    func save() {
+    /// Returns true only when the successfully saved generation can close.
+    @discardableResult
+    func save() async -> Bool {
+        guard canChangeAppliedSettings else { return false }
+        invalidateCredentialLoad()
+        let generation = draftGeneration
+        let operation = CredentialWriteOperation()
+        activeWrite = operation
+        isSaving = true
+        defer { finishSaving() }
         do {
             let values = try validatedDraft()
             let key = try validatedDraftAPIKey(for: values.url)
             let effectiveKey: String
             if !key.isEmpty {
-                try credentials.saveAPIKey(key, for: values.url)
+                try await credentials.saveAPIKey(key, for: values.url, operation: operation)
                 effectiveKey = key
             } else {
-                effectiveKey = try credentials.apiKey(for: values.url) ?? ""
+                effectiveKey = try await credentials.apiKey(for: values.url) ?? ""
+                // A read has no persisted write whose matching snapshot needs
+                // to survive shutdown or cancellation.
+                guard !isShuttingDown, !Task.isCancelled else {
+                    saveState = .idle
+                    return false
+                }
             }
-
+            // Always apply the saved snapshot; draft edits do not undo a write.
             store.providerURLString = values.urlString
             store.model = values.model
             currentAPIKey = effectiveKey
-            draftProviderURL = values.urlString
-            draftModel = values.model
-            draftAPIKey = effectiveKey
             loadMessage = nil
+            let unchanged = generation == draftGeneration
+            if unchanged {
+                draftProviderURL = values.urlString
+                draftModel = values.model
+                draftAPIKey = effectiveKey
+            }
             saveState = .success
+            return unchanged && !isShuttingDown
         } catch {
             saveState = .failure(Self.userMessage(for: error))
+            return false
         }
     }
 
     func checkConnection() {
-        guard connectionTask == nil else {
+        guard connectionTask == nil, canChangeAppliedSettings else {
             return
         }
 
@@ -235,18 +243,26 @@ final class SettingsViewModel {
         }
     }
 
-    func reset() {
+    func reset() async {
+        guard canChangeAppliedSettings else { return }
         invalidateConnectionCheck()
+        invalidateCredentialLoad()
         connectionState = .idle
-
+        let generation = draftGeneration
+        let operation = CredentialWriteOperation()
+        activeWrite = operation
+        isSaving = true
+        defer { finishSaving() }
         do {
-            try credentials.deleteAPIKey()
+            try await credentials.deleteAPIKey(operation: operation)
             store.reset()
             currentAPIKey = ""
-            draftProviderURL = store.providerURLString
-            draftModel = store.model
-            draftAPIKey = ""
-            showsAPIKey = false
+            if generation == draftGeneration {
+                draftProviderURL = store.providerURLString
+                draftModel = store.model
+                draftAPIKey = ""
+                showsAPIKey = false
+            }
             loadMessage = nil
             saveState = .success
         } catch {
@@ -255,30 +271,74 @@ final class SettingsViewModel {
     }
 
     func discardDraftChanges() {
+        guard canChangeAppliedSettings else { return }
         invalidateConnectionCheck()
         connectionState = .idle
         saveState = .idle
-
-        let providerURL = store.providerURLString
-        draftProviderURL = providerURL
+        draftProviderURL = store.providerURLString
         draftModel = store.model
+        draftAPIKey = ""
+        reloadCredential()
+    }
 
-        guard let url = URL(string: providerURL) else {
-            currentAPIKey = ""
-            draftAPIKey = ""
+    func beginShutdown() {
+        isShuttingDown = true
+        invalidateCredentialLoad()
+        invalidateConnectionCheck()
+    }
+
+    /// Called after the owner's immediate shutdown barrier. A queued write has
+    /// not started and must not make exit wait behind an unrelated blocked read.
+    func flushStartedSave() async {
+        guard activeWrite?.hasStarted == true else { return }
+        await withCheckedContinuation { saveWaiters.append($0) }
+    }
+
+    private func finishSaving() {
+        activeWrite = nil
+        isSaving = false
+        let waiters = saveWaiters
+        saveWaiters.removeAll()
+        for waiter in waiters { waiter.resume() }
+    }
+
+    private func invalidateCredentialLoad() {
+        loadID = nil
+        loadTask?.cancel()
+        loadTask = nil
+        isLoadingCredentials = false
+    }
+
+    private func reloadCredential() {
+        invalidateCredentialLoad()
+        guard !isShuttingDown, let url = URL(string: store.providerURLString) else {
             loadMessage = APIError.invalidURL.localizedDescription
             return
         }
-
-        do {
-            let apiKey = try credentials.apiKey(for: url) ?? ""
-            currentAPIKey = apiKey
-            draftAPIKey = apiKey
-            loadMessage = nil
-        } catch {
-            currentAPIKey = ""
-            draftAPIKey = ""
-            loadMessage = Self.userMessage(for: error)
+        let generation = draftGeneration
+        let id = UUID()
+        loadID = id
+        isLoadingCredentials = true
+        loadTask = Task { [weak self, credentials] in
+            let outcome: Result<String, any Error>
+            do { outcome = .success(try await credentials.apiKey(for: url) ?? "") }
+            catch { outcome = .failure(error) }
+            guard let self, !Task.isCancelled, self.loadID == id else { return }
+            self.loadID = nil
+            self.loadTask = nil
+            self.isLoadingCredentials = false
+            switch outcome {
+            case let .success(key):
+                self.currentAPIKey = key
+                self.loadMessage = nil
+                if self.draftGeneration == generation {
+                    self.draftAPIKey = key
+                    self.bindDraftKeyToCurrentOrigin()
+                }
+            case let .failure(error):
+                self.currentAPIKey = ""
+                self.loadMessage = Self.userMessage(for: error)
+            }
         }
     }
 
@@ -367,6 +427,7 @@ final class SettingsViewModel {
     }
 
     private func draftDidChange() {
+        draftGeneration += 1
         invalidateConnectionCheck()
         connectionState = .idle
         saveState = .idle
@@ -519,7 +580,7 @@ struct SettingsView: View {
             isPresented: $resetConfirmationVisible
         ) {
             Button("Сбросить", role: .destructive) {
-                model.reset()
+                Task { await model.reset() }
             }
             Button("Отмена", role: .cancel) {}
         } message: {
@@ -533,6 +594,7 @@ struct SettingsView: View {
             subtitle: "OpenAI-совместимый API",
             leading: {
                 Button {
+                    guard model.canChangeAppliedSettings else { return }
                     model.discardDraftChanges()
                     close()
                 } label: {
@@ -542,6 +604,7 @@ struct SettingsView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(QuietIconButtonStyle())
+                .disabled(!model.canChangeAppliedSettings)
                 .help("Вернуться к тексту")
                 .accessibilityLabel("Вернуться к тексту")
             }
@@ -733,22 +796,23 @@ struct SettingsView: View {
             .buttonStyle(.plain)
             .font(.system(size: 10, weight: .medium))
             .foregroundStyle(AppTheme.danger)
+            .disabled(!model.canChangeAppliedSettings)
 
             Spacer()
 
             Button("Отмена") {
+                guard model.canChangeAppliedSettings else { return }
                 model.discardDraftChanges()
                 close()
             }
             .buttonStyle(SettingsSecondaryButtonStyle())
+            .disabled(!model.canChangeAppliedSettings)
 
             Button("Сохранить") {
-                model.save()
-                if model.saveState == .success {
-                    close()
-                }
+                Task { if await model.save() { close() } }
             }
             .buttonStyle(SettingsSaveButtonStyle())
+            .disabled(!model.canChangeAppliedSettings)
             .keyboardShortcut(.return, modifiers: .command)
         }
         .padding(.horizontal, 16)

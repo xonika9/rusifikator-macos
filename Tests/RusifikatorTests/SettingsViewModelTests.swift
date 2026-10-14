@@ -15,6 +15,7 @@ final class SettingsViewModelTests: XCTestCase {
             connectionChecker: checker,
             loginItem: LoginItemController(service: FakeSettingsLoginItemService())
         )
+        await model.waitForInitialLoad()
 
         model.draftProviderURL = "https://draft.example/v1"
         model.draftModel = "draft/model"
@@ -31,10 +32,11 @@ final class SettingsViewModelTests: XCTestCase {
         let restored = SettingsStore(defaults: defaults)
         XCTAssertEqual(restored.providerURLString, SettingsStore.defaultProviderURLString)
         XCTAssertEqual(restored.model, SettingsStore.defaultModel)
-        XCTAssertNil(try credentials.apiKey(for: URL(string: "https://draft.example")!))
+        let key = try await credentials.apiKey(for: URL(string: "https://draft.example")!)
+        XCTAssertNil(key)
     }
 
-    func testSavePersistsDraftsAndKeyForMatchingOrigin() throws {
+    func testSavePersistsDraftsAndKeyForMatchingOrigin() async throws {
         let (defaults, suiteName) = makeDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let credentials = MemoryCredentialStore()
@@ -44,34 +46,34 @@ final class SettingsViewModelTests: XCTestCase {
             connectionChecker: RecordingConnectionChecker(),
             loginItem: LoginItemController(service: FakeSettingsLoginItemService())
         )
+        await model.waitForInitialLoad()
 
         model.draftProviderURL = "https://saved.example/v1"
         model.draftModel = "saved/model"
         model.draftAPIKey = "saved-secret"
-        model.save()
+        await model.save()
 
         XCTAssertEqual(model.saveState, .success)
         XCTAssertEqual(SettingsStore(defaults: defaults).providerURLString, "https://saved.example/v1")
         XCTAssertEqual(SettingsStore(defaults: defaults).model, "saved/model")
-        XCTAssertEqual(
-            try credentials.apiKey(for: URL(string: "https://saved.example/other")!),
-            "saved-secret"
-        )
+        let savedKey = try await credentials.apiKey(for: URL(string: "https://saved.example/other")!)
+        XCTAssertEqual(savedKey, "saved-secret")
     }
 
-    func testSavingEmptyDraftKeepsExistingKeyForOriginalOrigin() throws {
+    func testSavingEmptyDraftKeepsExistingKeyForOriginalOrigin() async throws {
         let (defaults, suiteName) = makeDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let store = SettingsStore(defaults: defaults)
         let credentials = MemoryCredentialStore()
         let originalURL = URL(string: SettingsStore.defaultProviderURLString)!
-        try credentials.saveAPIKey("existing-secret", for: originalURL)
+        try await credentials.saveAPIKey("existing-secret", for: originalURL)
         let model = SettingsViewModel(
             store: store,
             credentials: credentials,
             connectionChecker: RecordingConnectionChecker(),
             loginItem: LoginItemController(service: FakeSettingsLoginItemService())
         )
+        await model.waitForInitialLoad()
 
         model.draftProviderURL = "https://other.example/v1"
         XCTAssertEqual(model.draftAPIKey, "existing-secret")
@@ -79,15 +81,16 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(model.draftAPIKey, "existing-secret")
         model.draftAPIKey = ""
 
-        model.save()
+        await model.save()
 
         XCTAssertEqual(model.saveState, .success)
-        XCTAssertEqual(try credentials.apiKey(for: originalURL), "existing-secret")
+        let existingKey = try await credentials.apiKey(for: originalURL)
+        XCTAssertEqual(existingKey, "existing-secret")
         XCTAssertEqual(model.currentAPIKey, "existing-secret")
         XCTAssertEqual(model.draftAPIKey, "existing-secret")
     }
 
-    func testSaveFailureDoesNotPersistDraftSettings() {
+    func testSaveFailureDoesNotPersistDraftSettings() async {
         let (defaults, suiteName) = makeDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let model = SettingsViewModel(
@@ -100,7 +103,7 @@ final class SettingsViewModelTests: XCTestCase {
         model.draftModel = "draft/model"
         model.draftAPIKey = "draft-secret"
 
-        model.save()
+        await model.save()
 
         guard case .failure = model.saveState else {
             return XCTFail("Expected save failure")
@@ -110,13 +113,13 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(restored.model, SettingsStore.defaultModel)
     }
 
-    func testInitializationLoadsKeyOnlyForStoredOrigin() throws {
+    func testInitializationLoadsKeyOnlyForStoredOrigin() async throws {
         let (defaults, suiteName) = makeDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let store = SettingsStore(defaults: defaults)
         store.providerURLString = "https://current.example/"
         let credentials = MemoryCredentialStore()
-        try credentials.saveAPIKey(
+        try await credentials.saveAPIKey(
             "other-secret",
             for: URL(string: "https://other.example/")!
         )
@@ -127,18 +130,19 @@ final class SettingsViewModelTests: XCTestCase {
             connectionChecker: RecordingConnectionChecker(),
             loginItem: LoginItemController(service: FakeSettingsLoginItemService())
         )
+        await model.waitForInitialLoad()
 
         XCTAssertEqual(model.draftAPIKey, "")
         XCTAssertEqual(model.currentAPIKey, "")
         XCTAssertNotEqual(model.loadMessage, "other-secret")
     }
 
-    func testIncrementalProviderURLTypingPreservesKeyBoundToOriginalOrigin() throws {
+    func testIncrementalProviderURLTypingPreservesKeyBoundToOriginalOrigin() async throws {
         let (defaults, suiteName) = makeDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let store = SettingsStore(defaults: defaults)
         let credentials = MemoryCredentialStore()
-        try credentials.saveAPIKey(
+        try await credentials.saveAPIKey(
             "current-secret",
             for: URL(string: SettingsStore.defaultProviderURLString)!
         )
@@ -148,6 +152,7 @@ final class SettingsViewModelTests: XCTestCase {
             connectionChecker: RecordingConnectionChecker(),
             loginItem: LoginItemController(service: FakeSettingsLoginItemService())
         )
+        await model.waitForInitialLoad()
 
         model.draftProviderURL = "https://liteapi.gotacat.dev/v1"
         XCTAssertEqual(model.draftAPIKey, "current-secret")
@@ -170,6 +175,7 @@ final class SettingsViewModelTests: XCTestCase {
             connectionChecker: checker,
             loginItem: LoginItemController(service: FakeSettingsLoginItemService())
         )
+        await model.waitForInitialLoad()
 
         model.draftAPIKey = "draft-secret"
         model.draftProviderURL = "https://other.example/v1"
@@ -187,7 +193,7 @@ final class SettingsViewModelTests: XCTestCase {
         let (defaults, suiteName) = makeDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let credentials = MemoryCredentialStore()
-        try credentials.saveAPIKey(
+        try await credentials.saveAPIKey(
             "original-secret",
             for: URL(string: SettingsStore.defaultProviderURLString)!
         )
@@ -198,6 +204,7 @@ final class SettingsViewModelTests: XCTestCase {
             connectionChecker: checker,
             loginItem: LoginItemController(service: FakeSettingsLoginItemService())
         )
+        await model.waitForInitialLoad()
 
         model.draftProviderURL = "https://other.example/v1"
         model.draftAPIKey += "x"
@@ -219,7 +226,7 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(reboundCall?.apiKey, "new-secret")
     }
 
-    func testSaveRejectsKeyBoundToDifferentProviderOrigin() {
+    func testSaveRejectsKeyBoundToDifferentProviderOrigin() async {
         let (defaults, suiteName) = makeDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let store = SettingsStore(defaults: defaults)
@@ -229,10 +236,11 @@ final class SettingsViewModelTests: XCTestCase {
             connectionChecker: RecordingConnectionChecker(),
             loginItem: LoginItemController(service: FakeSettingsLoginItemService())
         )
+        await model.waitForInitialLoad()
 
         model.draftAPIKey = "draft-secret"
         model.draftProviderURL = "https://other.example/v1"
-        model.save()
+        await model.save()
 
         XCTAssertEqual(
             model.saveState,
@@ -241,12 +249,12 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(store.providerURLString, SettingsStore.defaultProviderURLString)
     }
 
-    func testSavingEmptyKeyForChangedProviderRejectsOldOriginCredential() throws {
+    func testSavingEmptyKeyForChangedProviderRejectsOldOriginCredential() async throws {
         let (defaults, suiteName) = makeDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let store = SettingsStore(defaults: defaults)
         let credentials = MemoryCredentialStore()
-        try credentials.saveAPIKey(
+        try await credentials.saveAPIKey(
             "existing-secret",
             for: URL(string: SettingsStore.defaultProviderURLString)!
         )
@@ -256,25 +264,22 @@ final class SettingsViewModelTests: XCTestCase {
             connectionChecker: RecordingConnectionChecker(),
             loginItem: LoginItemController(service: FakeSettingsLoginItemService())
         )
+        await model.waitForInitialLoad()
 
         model.draftProviderURL = "https://other.example/v1"
         model.draftAPIKey = ""
-        model.save()
+        await model.save()
 
         XCTAssertEqual(
             model.saveState,
             .failure(CredentialStoreError.providerOriginMismatch.localizedDescription)
         )
         XCTAssertEqual(store.providerURLString, SettingsStore.defaultProviderURLString)
-        XCTAssertEqual(
-            try credentials.apiKey(
-                for: URL(string: SettingsStore.defaultProviderURLString)!
-            ),
-            "existing-secret"
-        )
+        let existingKey = try await credentials.apiKey(for: URL(string: SettingsStore.defaultProviderURLString)!)
+        XCTAssertEqual(existingKey, "existing-secret")
     }
 
-    func testChangingProviderPathKeepsNewlyTypedKeyForSameOrigin() {
+    func testChangingProviderPathKeepsNewlyTypedKeyForSameOrigin() async {
         let (defaults, suiteName) = makeDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let model = SettingsViewModel(
@@ -283,6 +288,7 @@ final class SettingsViewModelTests: XCTestCase {
             connectionChecker: RecordingConnectionChecker(),
             loginItem: LoginItemController(service: FakeSettingsLoginItemService())
         )
+        await model.waitForInitialLoad()
 
         model.draftAPIKey = "draft-secret"
         model.draftProviderURL = "https://liteapi.gotacat.dev/v2"
@@ -295,7 +301,7 @@ final class SettingsViewModelTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let store = SettingsStore(defaults: defaults)
         let credentials = MemoryCredentialStore()
-        try credentials.saveAPIKey(
+        try await credentials.saveAPIKey(
             "original-secret",
             for: URL(string: SettingsStore.defaultProviderURLString)!
         )
@@ -310,7 +316,7 @@ final class SettingsViewModelTests: XCTestCase {
         editor.source = "Расшифровка"
 
         let replacementURL = URL(string: "https://replacement.example/v1")!
-        try credentials.saveAPIKey("replacement-secret", for: replacementURL)
+        try await credentials.saveAPIKey("replacement-secret", for: replacementURL)
         store.providerURLString = replacementURL.absoluteString
         model.submit(editor)
 
@@ -326,7 +332,7 @@ final class SettingsViewModelTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let store = SettingsStore(defaults: defaults)
         let credentials = MemoryCredentialStore()
-        try credentials.saveAPIKey(
+        try await credentials.saveAPIKey(
             "must-not-leak",
             for: URL(string: SettingsStore.defaultProviderURLString)!
         )
@@ -343,12 +349,11 @@ final class SettingsViewModelTests: XCTestCase {
         store.providerURLString = "https://attacker.example/v1"
         model.submit(editor)
 
-        let submitted = await waitForEditorCallCount(1, client: editorClient)
-        XCTAssertTrue(submitted)
-        let request = await editorClient.recordedCalls().first
-        XCTAssertEqual(request?.baseURL.absoluteString, "https://attacker.example/v1")
-        XCTAssertEqual(request?.apiKey, "")
-        XCTAssertFalse(request?.apiKey.contains("must-not-leak") ?? true)
+        for _ in 0..<500 where editor.state == .loading { await Task.yield() }
+        let calls = await editorClient.recordedCalls()
+        XCTAssertTrue(calls.isEmpty)
+        XCTAssertEqual(editor.state, .error)
+        XCTAssertFalse(editor.errorMessage?.contains("must-not-leak") ?? true)
     }
 
     func testChangingDraftInvalidatesActiveCheckAndIgnoresLateResult() async {
@@ -480,7 +485,7 @@ final class SettingsViewModelTests: XCTestCase {
         )
     }
 
-    func testRequiresApprovalIsShownAsEnabledAndCanBeDisabled() {
+    func testRequiresApprovalIsShownAsEnabledAndCanBeDisabled() async {
         let (defaults, suiteName) = makeDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let loginService = FakeSettingsLoginItemService()
@@ -491,6 +496,7 @@ final class SettingsViewModelTests: XCTestCase {
             connectionChecker: RecordingConnectionChecker(),
             loginItem: LoginItemController(service: loginService)
         )
+        await model.waitForInitialLoad()
 
         XCTAssertTrue(model.loginItemIsEnabled)
         model.setLoginItemEnabled(false)
@@ -498,7 +504,7 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertFalse(model.loginItemIsEnabled)
     }
 
-    func testResetClearsCredentialsAndRestoresDraftDefaults() throws {
+    func testResetClearsCredentialsAndRestoresDraftDefaults() async throws {
         let (defaults, suiteName) = makeDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let credentials = MemoryCredentialStore()
@@ -511,25 +517,26 @@ final class SettingsViewModelTests: XCTestCase {
         model.draftProviderURL = "https://saved.example/"
         model.draftModel = "saved/model"
         model.draftAPIKey = "saved-secret"
-        model.save()
+        await model.save()
 
-        model.reset()
+        await model.reset()
 
         XCTAssertEqual(model.draftProviderURL, SettingsStore.defaultProviderURLString)
         XCTAssertEqual(model.draftModel, SettingsStore.defaultModel)
         XCTAssertEqual(model.draftAPIKey, "")
         XCTAssertEqual(model.currentAPIKey, "")
-        XCTAssertNil(try credentials.apiKey(for: URL(string: "https://saved.example/")!))
+        let key = try await credentials.apiKey(for: URL(string: "https://saved.example/")!)
+        XCTAssertNil(key)
     }
 
-    func testDiscardRestoresAppliedSettingsAndCredential() throws {
+    func testDiscardRestoresAppliedSettingsAndCredential() async throws {
         let (defaults, suiteName) = makeDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let store = SettingsStore(defaults: defaults)
         store.providerURLString = "https://saved.example/v1"
         store.model = "saved/model"
         let credentials = MemoryCredentialStore()
-        try credentials.saveAPIKey(
+        try await credentials.saveAPIKey(
             "saved-secret",
             for: URL(string: "https://saved.example/v1")!
         )
@@ -539,11 +546,13 @@ final class SettingsViewModelTests: XCTestCase {
             connectionChecker: RecordingConnectionChecker(),
             loginItem: LoginItemController(service: FakeSettingsLoginItemService())
         )
+        await model.waitForInitialLoad()
 
         model.draftProviderURL = "https://other.example/v1"
         model.draftModel = "other/model"
         model.draftAPIKey = "other-secret"
         model.discardDraftChanges()
+        await model.waitForInitialLoad()
 
         XCTAssertEqual(model.draftProviderURL, "https://saved.example/v1")
         XCTAssertEqual(model.draftModel, "saved/model")
@@ -551,6 +560,175 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(model.currentAPIKey, "saved-secret")
         XCTAssertEqual(model.connectionState, .idle)
         XCTAssertEqual(model.saveState, .idle)
+    }
+
+    func testSuccessfulSaveAppliesSnapshotPreservesNewDraftAndBlocksDependentActions() async {
+        let (defaults, suiteName) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = SettingsStore(defaults: defaults)
+        let credentials = ControlledSettingsCredentials()
+        let model = SettingsViewModel(store: store, credentials: credentials,
+                                      connectionChecker: RecordingConnectionChecker(),
+                                      loginItem: LoginItemController(service: FakeSettingsLoginItemService()))
+        await credentials.waitForReads(1)
+        await credentials.finishRead(0, key: nil)
+        await model.waitForInitialLoad()
+        model.draftProviderURL = "https://saved.example/v1"
+        model.draftModel = "saved/model"
+        model.draftAPIKey = "saved-key"
+        let save = Task { await model.save() }
+        await credentials.waitForWrite()
+        XCTAssertTrue(model.isSaving)
+        XCTAssertFalse(model.canCheckConnection)
+        let editorClient = RecordingEditorAPIClient()
+        let editor = EditorViewModel(apiClient: editorClient, clipboard: ClipboardStub())
+        editor.source = "Source"
+        model.submit(editor)
+        model.discardDraftChanges()
+        await model.reset()
+        let secondSave = await model.save()
+        XCTAssertFalse(secondSave)
+        XCTAssertEqual(store.providerURLString, SettingsStore.defaultProviderURLString)
+        model.draftProviderURL = "https://new.example/v1"
+        model.draftModel = "new/model"
+        model.draftAPIKey = ""
+        model.draftAPIKey = "new-key"
+        await credentials.finishWrite()
+        let close = await save.value
+        XCTAssertFalse(close)
+        XCTAssertFalse(model.isSaving)
+        XCTAssertEqual(store.providerURLString, "https://saved.example/v1")
+        XCTAssertEqual(store.model, "saved/model")
+        XCTAssertEqual(model.currentAPIKey, "saved-key")
+        XCTAssertEqual(model.draftProviderURL, "https://new.example/v1")
+        XCTAssertEqual(model.draftModel, "new/model")
+        XCTAssertEqual(model.draftAPIKey, "new-key")
+        let calls = await editorClient.recordedCalls()
+        XCTAssertTrue(calls.isEmpty)
+        let deletes = await credentials.deletes
+        XCTAssertEqual(deletes, 0)
+    }
+
+    func testLateInitialAndDiscardLoadsCannotReplaceNewDraft() async {
+        let (defaults, suiteName) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let credentials = ControlledSettingsCredentials()
+        let model = SettingsViewModel(store: SettingsStore(defaults: defaults), credentials: credentials,
+                                      connectionChecker: RecordingConnectionChecker(),
+                                      loginItem: LoginItemController(service: FakeSettingsLoginItemService()))
+        await credentials.waitForReads(1)
+        model.draftAPIKey = "new-draft"
+        await credentials.finishRead(0, key: "old-applied")
+        await model.waitForInitialLoad()
+        XCTAssertEqual(model.draftAPIKey, "new-draft")
+        XCTAssertEqual(model.currentAPIKey, "old-applied")
+        model.discardDraftChanges()
+        await credentials.waitForReads(2)
+        model.draftAPIKey = "after-discard"
+        await credentials.finishRead(1, key: "old-applied")
+        await model.waitForInitialLoad()
+        XCTAssertEqual(model.draftAPIKey, "after-discard")
+    }
+
+    func testSameGenerationSaveAllowsCloseOnlyAfterSuccess() async {
+        let (defaults, suiteName) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let model = SettingsViewModel(store: SettingsStore(defaults: defaults), credentials: MemoryCredentialStore(),
+                                      connectionChecker: RecordingConnectionChecker(),
+                                      loginItem: LoginItemController(service: FakeSettingsLoginItemService()))
+        await model.waitForInitialLoad()
+        model.draftAPIKey = "saved-key"
+        let close = await model.save()
+        XCTAssertTrue(close)
+        XCTAssertEqual(model.saveState, .success)
+    }
+
+    func testShutdownAndCancellationWaitForStartedSaveSnapshotApplication() async {
+        let (defaults, suiteName) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = SettingsStore(defaults: defaults)
+        let credentials = ControlledSettingsCredentials()
+        let model = SettingsViewModel(store: store, credentials: credentials,
+                                      connectionChecker: RecordingConnectionChecker(),
+                                      loginItem: LoginItemController(service: FakeSettingsLoginItemService()))
+        await credentials.waitForReads(1)
+        await credentials.finishRead(0, key: nil)
+        await model.waitForInitialLoad()
+        model.draftModel = "saved/model"
+        model.draftAPIKey = "saved-key"
+        let save = Task { await model.save() }
+        await credentials.waitForWrite()
+        save.cancel()
+        model.beginShutdown()
+        var waiting = false
+        var finished = false
+        let flush = Task { waiting = true; await model.flushStartedSave(); finished = true }
+        while !waiting { await Task.yield() }
+        XCTAssertFalse(finished)
+        await credentials.finishWrite()
+        let close = await save.value
+        await flush.value
+        XCTAssertFalse(close)
+        XCTAssertEqual(store.model, "saved/model")
+        XCTAssertEqual(model.currentAPIKey, "saved-key")
+        XCTAssertTrue(finished)
+    }
+
+    func testDiscardInvalidatesStillPendingInitialLoad() async {
+        let (defaults, suiteName) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let credentials = ControlledSettingsCredentials()
+        let model = SettingsViewModel(store: SettingsStore(defaults: defaults), credentials: credentials,
+                                      connectionChecker: RecordingConnectionChecker(),
+                                      loginItem: LoginItemController(service: FakeSettingsLoginItemService()))
+        await credentials.waitForReads(1)
+        model.discardDraftChanges()
+        await credentials.waitForReads(2)
+        await credentials.finishRead(0, key: "obsolete")
+        await credentials.finishRead(1, key: "fresh")
+        await model.waitForInitialLoad()
+        XCTAssertEqual(model.draftAPIKey, "fresh")
+        XCTAssertEqual(model.currentAPIKey, "fresh")
+    }
+
+    func testReadOnlySaveCannotApplyAfterShutdownOrCancellation() async {
+        for shutdown in [true, false] {
+            let (defaults, suiteName) = makeDefaults()
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+            let store = SettingsStore(defaults: defaults)
+            let credentials = ControlledSettingsCredentials()
+            let model = SettingsViewModel(store: store, credentials: credentials,
+                                          connectionChecker: RecordingConnectionChecker(),
+                                          loginItem: LoginItemController(service: FakeSettingsLoginItemService()))
+            await credentials.waitForReads(1)
+            await credentials.finishRead(0, key: "original-key")
+            await model.waitForInitialLoad()
+            model.draftProviderURL = "https://liteapi.gotacat.dev/v1"
+            model.draftModel = "unstarted/model"
+            model.draftAPIKey = ""
+            let save = Task { await model.save() }
+            await credentials.waitForReads(2)
+            XCTAssertTrue(model.isSaving)
+            if shutdown {
+                model.beginShutdown()
+                // No backend write started: this returns while the read is blocked.
+                await model.flushStartedSave()
+                XCTAssertTrue(model.isSaving)
+            } else {
+                save.cancel()
+            }
+            await credentials.finishRead(1, key: "late-key")
+            let close = await save.value
+            XCTAssertFalse(close)
+            XCTAssertEqual(store.providerURLString, SettingsStore.defaultProviderURLString)
+            XCTAssertEqual(store.model, SettingsStore.defaultModel)
+            XCTAssertEqual(model.currentAPIKey, "original-key")
+            XCTAssertEqual(model.draftProviderURL, "https://liteapi.gotacat.dev/v1")
+            XCTAssertEqual(model.draftModel, "unstarted/model")
+            XCTAssertEqual(model.draftAPIKey, "")
+            XCTAssertNotEqual(model.saveState, .success)
+            XCTAssertFalse(model.isSaving)
+        }
     }
 
     private func makeDefaults() -> (UserDefaults, String) {
@@ -612,11 +790,12 @@ final class SettingsViewModelTests: XCTestCase {
     }
 }
 
-private final class MemoryCredentialStore: CredentialStore, @unchecked Sendable {
+private actor MemoryCredentialStore: AsyncCredentialStoring {
     private var key: String?
     private var origin: String?
 
-    func saveAPIKey(_ apiKey: String, for providerURL: URL) throws {
+    func saveAPIKey(_ apiKey: String, for providerURL: URL, operation: CredentialWriteOperation) throws {
+        operation.markStarted()
         key = apiKey
         origin = try ProviderOrigin.canonicalString(for: providerURL)
     }
@@ -629,7 +808,7 @@ private final class MemoryCredentialStore: CredentialStore, @unchecked Sendable 
         return key
     }
 
-    func deleteAPIKey() throws {
+    func deleteAPIKey(operation: CredentialWriteOperation) throws {
         key = nil
         origin = nil
     }
@@ -695,8 +874,8 @@ private struct ClipboardStub: ClipboardService {
     func copy(_ string: String) {}
 }
 
-private struct FailingSaveCredentialStore: CredentialStore {
-    func saveAPIKey(_ apiKey: String, for providerURL: URL) throws {
+private struct FailingSaveCredentialStore: AsyncCredentialStoring {
+    func saveAPIKey(_ apiKey: String, for providerURL: URL, operation: CredentialWriteOperation) throws {
         throw APIError.transport(requestCode: "A1B2C3D4")
     }
 
@@ -704,7 +883,7 @@ private struct FailingSaveCredentialStore: CredentialStore {
         nil
     }
 
-    func deleteAPIKey() throws {}
+    func deleteAPIKey(operation: CredentialWriteOperation) throws {}
 }
 
 private struct SensitiveConnectionError: LocalizedError {
@@ -726,4 +905,28 @@ private final class FakeSettingsLoginItemService: LoginItemServicing {
     }
 
     func openSystemSettings() {}
+}
+
+private actor ControlledSettingsCredentials: AsyncCredentialStoring {
+    private var reads: [CheckedContinuation<String?, any Error>] = []
+    private var write: CheckedContinuation<Void, any Error>?
+    private(set) var deletes = 0
+    func apiKey(for providerURL: URL) async throws -> String? {
+        try await withCheckedThrowingContinuation { reads.append($0) }
+    }
+    func saveAPIKey(_ apiKey: String, for providerURL: URL, operation: CredentialWriteOperation) async throws {
+        operation.markStarted()
+        try await withCheckedThrowingContinuation { write = $0 }
+    }
+    func deleteAPIKey(operation: CredentialWriteOperation) async throws { deletes += 1 }
+    func waitForReads(_ count: Int) async {
+        for _ in 0..<500 { if reads.count == count { return }; await Task.yield() }
+        XCTFail("Expected reads: \(count)")
+    }
+    func waitForWrite() async {
+        for _ in 0..<500 { if write != nil { return }; await Task.yield() }
+        XCTFail("Expected write")
+    }
+    func finishRead(_ index: Int, key: String?) { reads[index].resume(returning: key) }
+    func finishWrite() { write?.resume(); write = nil }
 }

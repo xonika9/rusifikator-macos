@@ -19,7 +19,7 @@ final class EditorViewModelTests: XCTestCase {
         model.submit(
             baseURL: baseURL,
             model: "model",
-            apiKey: "key",
+            credentials: ImmediateEditorCredentials(key: "key"),
             systemPrompt: "system"
         )
 
@@ -47,13 +47,13 @@ final class EditorViewModelTests: XCTestCase {
         model.submit(
             baseURL: baseURL,
             model: "first-model",
-            apiKey: "first-key",
+            credentials: ImmediateEditorCredentials(key: "first-key"),
             systemPrompt: "first-system"
         )
         model.submit(
             baseURL: URL(string: "https://second.example")!,
             model: "second-model",
-            apiKey: "second-key",
+            credentials: ImmediateEditorCredentials(key: "second-key"),
             systemPrompt: "second-system"
         )
 
@@ -84,7 +84,7 @@ final class EditorViewModelTests: XCTestCase {
         model.submit(
             baseURL: baseURL,
             model: "model",
-            apiKey: "key",
+            credentials: ImmediateEditorCredentials(key: "key"),
             systemPrompt: "system"
         )
         await waitForCallCount(1, client: client)
@@ -112,7 +112,7 @@ final class EditorViewModelTests: XCTestCase {
         model.submit(
             baseURL: baseURL,
             model: "model",
-            apiKey: "key",
+            credentials: ImmediateEditorCredentials(key: "key"),
             systemPrompt: "system"
         )
         await waitForCallCount(1, client: client)
@@ -143,7 +143,7 @@ final class EditorViewModelTests: XCTestCase {
         model.submit(
             baseURL: baseURL,
             model: "model",
-            apiKey: "key",
+            credentials: ImmediateEditorCredentials(key: "key"),
             systemPrompt: "system"
         )
         await waitForCallCount(1, client: client)
@@ -165,7 +165,7 @@ final class EditorViewModelTests: XCTestCase {
         model.submit(
             baseURL: baseURL,
             model: "model",
-            apiKey: "key",
+            credentials: ImmediateEditorCredentials(key: "key"),
             systemPrompt: "system"
         )
         await waitForCallCount(1, client: client)
@@ -189,7 +189,7 @@ final class EditorViewModelTests: XCTestCase {
         model.submit(
             baseURL: baseURL,
             model: "model",
-            apiKey: "key",
+            credentials: ImmediateEditorCredentials(key: "key"),
             systemPrompt: "system"
         )
         await waitForCallCount(1, client: client)
@@ -217,7 +217,7 @@ final class EditorViewModelTests: XCTestCase {
         model.submit(
             baseURL: baseURL,
             model: "model",
-            apiKey: "key",
+            credentials: ImmediateEditorCredentials(key: "key"),
             systemPrompt: "system"
         )
         await waitForCallCount(1, client: client)
@@ -246,7 +246,7 @@ final class EditorViewModelTests: XCTestCase {
         model.submit(
             baseURL: baseURL,
             model: "model-a",
-            apiKey: "key-a",
+            credentials: ImmediateEditorCredentials(key: "key-a"),
             systemPrompt: "system-a"
         )
         await waitForCallCount(1, client: client)
@@ -260,7 +260,7 @@ final class EditorViewModelTests: XCTestCase {
         model.submit(
             baseURL: URL(string: "https://other.example/v1")!,
             model: "model-b",
-            apiKey: "key-b",
+            credentials: ImmediateEditorCredentials(key: "key-b"),
             systemPrompt: "system-b"
         )
         await waitForCallCount(2, client: client)
@@ -285,7 +285,7 @@ final class EditorViewModelTests: XCTestCase {
         model.submit(
             baseURL: baseURL,
             model: "model",
-            apiKey: "key",
+            credentials: ImmediateEditorCredentials(key: "key"),
             systemPrompt: "system"
         )
         await waitForCallCount(1, client: client)
@@ -295,7 +295,7 @@ final class EditorViewModelTests: XCTestCase {
         model.submit(
             baseURL: baseURL,
             model: "model",
-            apiKey: "key",
+            credentials: ImmediateEditorCredentials(key: "key"),
             systemPrompt: "system"
         )
         await waitForCallCount(2, client: client)
@@ -317,7 +317,7 @@ final class EditorViewModelTests: XCTestCase {
         model.submit(
             baseURL: baseURL,
             model: "model",
-            apiKey: "key",
+            credentials: ImmediateEditorCredentials(key: "key"),
             systemPrompt: "system"
         )
         await waitForCallCount(1, client: client)
@@ -335,7 +335,7 @@ final class EditorViewModelTests: XCTestCase {
         model.submit(
             baseURL: baseURL,
             model: "model",
-            apiKey: "key",
+            credentials: ImmediateEditorCredentials(key: "key"),
             systemPrompt: "system"
         )
         await waitForCallCount(2, client: client)
@@ -358,7 +358,7 @@ final class EditorViewModelTests: XCTestCase {
         model.submit(
             baseURL: baseURL,
             model: "model",
-            apiKey: "key",
+            credentials: ImmediateEditorCredentials(key: "key"),
             systemPrompt: "system"
         )
         await waitForCallCount(1, client: client)
@@ -400,7 +400,7 @@ final class EditorViewModelTests: XCTestCase {
         clocked.submit(
             baseURL: baseURL,
             model: "model",
-            apiKey: "key",
+            credentials: ImmediateEditorCredentials(key: "key"),
             systemPrompt: "system"
         )
         await waitForCallCount(1, client: client)
@@ -431,7 +431,7 @@ final class EditorViewModelTests: XCTestCase {
         model.submit(
             baseURL: baseURL,
             model: "model",
-            apiKey: "key",
+            credentials: ImmediateEditorCredentials(key: "key"),
             systemPrompt: "system"
         )
         await waitForCallCount(1, client: client)
@@ -494,7 +494,7 @@ final class EditorViewModelTests: XCTestCase {
         model.submit(
             baseURL: baseURL,
             model: "model",
-            apiKey: "key",
+            credentials: ImmediateEditorCredentials(key: "key"),
             systemPrompt: "system"
         )
         await waitForCallCount(1, client: client)
@@ -534,7 +534,7 @@ final class EditorViewModelTests: XCTestCase {
         model.submit(
             baseURL: baseURL,
             model: "model",
-            apiKey: "key",
+            credentials: ImmediateEditorCredentials(key: "key"),
             systemPrompt: "system"
         )
         await waitForCallCount(1, client: client)
@@ -553,6 +553,89 @@ final class EditorViewModelTests: XCTestCase {
         model.popoverWillShow()
 
         XCTAssertEqual(model.source, "Свежий черновик")
+    }
+
+    func testCancelledPreparationCannotSendAfterLateKeyAndNewRequest() async {
+        let client = ControlledEditorAPIClient()
+        let credentials = ControlledEditorCredentials()
+        let model = EditorViewModel(apiClient: client, credentials: credentials, clipboard: ClipboardSpy())
+        model.source = "A"
+        model.submit(baseURL: baseURL, model: "model-a")
+        XCTAssertEqual(model.loadingPhase, .preparingCredentials)
+        XCTAssertFalse(model.canSubmit)
+        XCTAssertTrue(model.canCancel)
+        await credentials.waitForReads(1)
+        model.cancel()
+        model.source = "B"
+        let secondURL = URL(string: "https://second.example")!
+        model.submit(baseURL: secondURL, model: "model-b")
+        await credentials.waitForReads(2)
+        await credentials.complete(read: 0, key: "old")
+        await credentials.complete(read: 1, key: "fresh")
+        await waitForCallCount(1, client: client)
+        let calls = await client.recordedCalls()
+        XCTAssertEqual(calls.count, 1)
+        XCTAssertEqual(calls.first?.source, "B")
+        XCTAssertEqual(calls.first?.model, "model-b")
+        XCTAssertEqual(calls.first?.baseURL, secondURL)
+        XCTAssertEqual(calls.first?.apiKey, "fresh")
+        await client.succeed(call: 0, with: "B final")
+        await waitForState(.success, model: model)
+        XCTAssertEqual(model.result, "B final")
+    }
+
+    func testPreparationFreezesSourceAndSurvivesHiddenIdlePeriod() async {
+        let client = ControlledEditorAPIClient()
+        let credentials = ControlledEditorCredentials()
+        let clock = TestClock()
+        let model = EditorViewModel(apiClient: client, credentials: credentials, clipboard: ClipboardSpy(), now: { clock.now })
+        model.source = "Frozen"
+        model.submit(baseURL: baseURL, model: "frozen-model")
+        await credentials.waitForReads(1)
+        model.source = "Later"
+        model.popoverDidHide()
+        clock.advance(by: 121)
+        model.popoverWillShow()
+        XCTAssertEqual(model.state, .loading)
+        XCTAssertEqual(model.loadingPhase, .preparingCredentials)
+        await credentials.complete(read: 0, key: "fresh")
+        await waitForCallCount(1, client: client)
+        let calls = await client.recordedCalls()
+        XCTAssertEqual(calls.first?.source, "Frozen")
+        XCTAssertEqual(calls.first?.model, "frozen-model")
+        await client.succeed(call: 0, with: "Final")
+        await waitForState(.success, model: model)
+    }
+
+    func testShutdownDuringPreparationForbidsLatePostAndNewSubmit() async {
+        let client = ControlledEditorAPIClient()
+        let credentials = ControlledEditorCredentials()
+        let model = EditorViewModel(apiClient: client, credentials: credentials, clipboard: ClipboardSpy())
+        model.source = "A"
+        model.submit(baseURL: baseURL, model: "model")
+        await credentials.waitForReads(1)
+        model.beginShutdown()
+        XCTAssertFalse(model.canSubmit)
+        model.submit(baseURL: baseURL, model: "new")
+        await credentials.complete(read: 0, key: "late")
+        for _ in 0..<20 { await Task.yield() }
+        let calls = await client.recordedCalls()
+        XCTAssertTrue(calls.isEmpty)
+        let reads = await credentials.readCount
+        XCTAssertEqual(reads, 1)
+    }
+
+    func testMissingOrFailedCredentialNeverReachesNetworkAndDoesNotExposeSecret() async {
+        for credential in [FailedEditorCredentials(fail: false), FailedEditorCredentials(fail: true)] {
+            let client = ControlledEditorAPIClient()
+            let model = EditorViewModel(apiClient: client, credentials: credential, clipboard: ClipboardSpy())
+            model.source = "Source"
+            model.submit(baseURL: baseURL, model: "model")
+            await waitForState(.error, model: model)
+            let calls = await client.recordedCalls()
+            XCTAssertTrue(calls.isEmpty)
+            XCTAssertFalse(model.errorMessage?.contains("must-not-leak") ?? true)
+        }
     }
 
     private func makeModel(
@@ -669,4 +752,39 @@ private final class HistoryRecorderSpy: HistoryRecording {
     func record(source: String, result: String) {
         entries.append(.init(source: source, result: result))
     }
+}
+
+private struct ImmediateEditorCredentials: AsyncCredentialStoring {
+    let key: String
+    func apiKey(for providerURL: URL) async throws -> String? { key }
+    func saveAPIKey(_ apiKey: String, for providerURL: URL, operation: CredentialWriteOperation) async throws {}
+    func deleteAPIKey(operation: CredentialWriteOperation) async throws {}
+}
+
+private actor ControlledEditorCredentials: AsyncCredentialStoring {
+    private var continuations: [CheckedContinuation<String?, any Error>] = []
+    var readCount: Int { continuations.count }
+    func apiKey(for providerURL: URL) async throws -> String? {
+        try await withCheckedThrowingContinuation { continuations.append($0) }
+    }
+    func waitForReads(_ count: Int) async {
+        for _ in 0..<500 {
+            if continuations.count == count { return }
+            await Task.yield()
+        }
+        XCTFail("Expected credential reads: \(count)")
+    }
+    func complete(read: Int, key: String) { continuations[read].resume(returning: key) }
+    func saveAPIKey(_ apiKey: String, for providerURL: URL, operation: CredentialWriteOperation) async throws {}
+    func deleteAPIKey(operation: CredentialWriteOperation) async throws {}
+}
+
+private struct FailedEditorCredentials: AsyncCredentialStoring {
+    let fail: Bool
+    func apiKey(for providerURL: URL) async throws -> String? {
+        if fail { throw SecretLocalizedError() }
+        return nil
+    }
+    func saveAPIKey(_ apiKey: String, for providerURL: URL, operation: CredentialWriteOperation) async throws {}
+    func deleteAPIKey(operation: CredentialWriteOperation) async throws {}
 }

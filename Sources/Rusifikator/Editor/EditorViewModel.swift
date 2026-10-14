@@ -43,9 +43,15 @@ final class EditorViewModel {
     }
 
     private(set) var state: EditorState = .empty
+    enum LoadingPhase: Equatable { case preparingCredentials, requesting }
+    private(set) var loadingPhase: LoadingPhase?
+    private(set) var isShuttingDown = false
     private(set) var result: String?
     private(set) var errorMessage: String?
     private(set) var copiedConfirmationVisible = false
+
+    @ObservationIgnored
+    private let credentials: any AsyncCredentialStoring
 
     @ObservationIgnored
     private let apiClient: any EditorAPIClient
@@ -83,10 +89,12 @@ final class EditorViewModel {
 
     init(
         apiClient: any EditorAPIClient = OpenAIEditorAPIClient(),
+        credentials: any AsyncCredentialStoring = AsyncCredentialStore(),
         clipboard: any ClipboardService = SystemClipboardService(),
         history: (any HistoryRecording)? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
+        self.credentials = credentials
         self.apiClient = apiClient
         self.clipboard = clipboard
         self.history = history
@@ -94,7 +102,7 @@ final class EditorViewModel {
     }
 
     var canSubmit: Bool {
-        requestTask == nil && !trimmedSource.isEmpty
+        !isShuttingDown && requestTask == nil && !trimmedSource.isEmpty
     }
 
     var canCancel: Bool {
@@ -116,42 +124,46 @@ final class EditorViewModel {
     func submit(
         baseURL: URL,
         model: String,
-        apiKey: String,
+        credentials override: (any AsyncCredentialStoring)? = nil,
         systemPrompt: String = FixedSystemPrompt.text
     ) {
-        guard requestTask == nil, !trimmedSource.isEmpty else {
-            return
-        }
-
-        let request = EditorRequest(
-            id: UUID(),
-            source: source,
-            baseURL: baseURL,
-            model: model,
-            apiKey: apiKey,
-            systemPrompt: systemPrompt
-        )
-
-        activeRequestID = request.id
+        guard canSubmit else { return }
+        let id = UUID()
+        let sourceSnapshot = source
+        let credentials = override ?? self.credentials
+        activeRequestID = id
         result = nil
         errorMessage = nil
         hideCopyConfirmation()
+        loadingPhase = .preparingCredentials
         state = .loading
 
         requestTask = Task { [weak self, apiClient] in
             do {
+                let key = try await credentials.apiKey(for: baseURL) ?? ""
+                try Task.checkCancellation()
+                guard let self, self.activeRequestID == id, !self.isShuttingDown else { return }
+                guard !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    throw APIError.missingAPIKey
+                }
+                let request = EditorRequest(
+                    id: id, source: sourceSnapshot, baseURL: baseURL,
+                    model: model, apiKey: key, systemPrompt: systemPrompt
+                )
+                self.loadingPhase = .requesting
                 let result = try await apiClient.clean(request)
-                guard !Task.isCancelled else {
-                    return
-                }
-                self?.finish(request: request, with: .success(result))
+                guard !Task.isCancelled else { return }
+                self.finish(id: id, source: sourceSnapshot, with: .success(result))
             } catch {
-                guard !Task.isCancelled else {
-                    return
-                }
-                self?.finish(request: request, with: .failure(error))
+                guard !Task.isCancelled else { return }
+                self?.finish(id: id, source: sourceSnapshot, with: .failure(error))
             }
         }
+    }
+
+    func beginShutdown() {
+        isShuttingDown = true
+        invalidateActiveRequest()
     }
 
     func cancel() {
@@ -251,14 +263,16 @@ final class EditorViewModel {
     }
 
     private func finish(
-        request: EditorRequest,
+        id: UUID,
+        source: String,
         with outcome: Result<String, any Error>
     ) {
-        guard activeRequestID == request.id else {
+        guard activeRequestID == id else {
             return
         }
 
         activeRequestID = nil
+        loadingPhase = nil
         requestTask = nil
 
         switch outcome {
@@ -266,7 +280,7 @@ final class EditorViewModel {
             self.result = result
             errorMessage = nil
             state = .success
-            history?.record(source: request.source, result: result)
+            history?.record(source: source, result: result)
 
         case let .failure(error):
             result = nil
@@ -282,6 +296,7 @@ final class EditorViewModel {
 
     private func invalidateActiveRequest() {
         activeRequestID = nil
+        loadingPhase = nil
         requestTask?.cancel()
         requestTask = nil
     }
@@ -294,6 +309,9 @@ final class EditorViewModel {
     }
 
     private static func userMessage(for error: any Error) -> String {
+        if let error = error as? CredentialStoreError {
+            return error.localizedDescription
+        }
         if let error = error as? APIError {
             return error.localizedDescription
         }

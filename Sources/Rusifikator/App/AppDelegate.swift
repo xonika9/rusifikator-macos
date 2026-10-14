@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     let updates: UpdateViewModel
     let coordinator: PopoverCoordinator
 
+    private let credentials = AsyncCredentialStore()
     private let networkSessions = NetworkSessionOwner()
     private let popover = NSPopover()
     private var statusItem: NSStatusItem?
@@ -18,8 +19,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let history = HistoryStore()
         self.history = history
         let client = OpenAICompatibleClient(sessionOwner: networkSessions)
-        editor = EditorViewModel(apiClient: OpenAIEditorAPIClient(client: client), history: history)
-        settings = SettingsViewModel(connectionChecker: client)
+        editor = EditorViewModel(apiClient: OpenAIEditorAPIClient(client: client), credentials: credentials, history: history)
+        settings = SettingsViewModel(credentials: credentials, connectionChecker: client)
         updates = UpdateViewModel()
         coordinator = PopoverCoordinator()
         super.init()
@@ -42,8 +43,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     func applicationShouldTerminate(
         _ sender: NSApplication
     ) -> NSApplication.TerminateReply {
+        credentials.beginShutdown()
+        settings.beginShutdown()
+        editor.beginShutdown()
         networkSessions.close()
         Task {
+            await credentials.flushStartedWrites()
+            await settings.flushStartedSave()
             await history.flushPendingPersistence()
             await networkSessions.drain()
             sender.reply(toApplicationShouldTerminate: true)

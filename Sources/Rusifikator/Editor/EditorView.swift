@@ -172,7 +172,7 @@ struct EditorView: View {
                 enabled: editor.canSubmit || editor.canCancel
             )
         )
-        .disabled(!editor.canSubmit && !editor.canCancel)
+        .disabled((!editor.canSubmit || !settings.canChangeAppliedSettings) && !editor.canCancel)
         .keyboardShortcut(.return, modifiers: .command)
         .padding(.top, 10)
         .accessibilityHint(
@@ -230,11 +230,13 @@ struct EditorView: View {
         VStack(spacing: 8) {
             ProgressView()
                 .controlSize(.small)
-            Text("Обрабатываю…")
+            Text(editor.loadingPhase == .preparingCredentials ? "Читаю ключ…" : "Обрабатываю…")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(AppTheme.textSoft)
             Text(
-                "Запрос завершится не позднее чем через \(Int(OpenAICompatibleClient.processingTimeout)) секунд"
+                editor.loadingPhase == .preparingCredentials
+                    ? "Подготовку можно отменить."
+                    : "Запрос завершится не позднее чем через \(Int(OpenAICompatibleClient.processingTimeout)) секунд"
             )
                 .font(.system(size: 10))
                 .foregroundStyle(AppTheme.textFaint)
