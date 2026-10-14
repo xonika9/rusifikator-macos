@@ -144,16 +144,25 @@ final class AppLaunchTests: XCTestCase {
         _ = NSApplication.shared
         let credentials = AsyncCredentialStore(makeStore: { LaunchCredentials() })
         let defaults = UserDefaults(suiteName: "rusifikator-launch-\(UUID().uuidString)")!
+        let history = HistoryStore(persistence: LaunchHistory())
+        let settingsStore = SettingsStore(defaults: defaults)
+        let loginItem = LoginItemController(service: LaunchLoginItem())
+        if let scheduler {
+            return AppDelegate(
+                credentials: credentials,
+                history: history,
+                settingsStore: settingsStore,
+                loginItem: loginItem,
+                makeUpdater: makeUpdater,
+                scheduleUpdater: scheduler.schedule
+            )
+        }
         return AppDelegate(
             credentials: credentials,
-            history: HistoryStore(persistence: LaunchHistory()),
-            settingsStore: SettingsStore(defaults: defaults),
-            loginItem: LoginItemController(service: LaunchLoginItem()),
-            makeUpdater: makeUpdater,
-            scheduleUpdater: { operation in
-                if let scheduler { return scheduler.schedule(operation) }
-                return Task { @MainActor in operation() }
-            }
+            history: history,
+            settingsStore: settingsStore,
+            loginItem: loginItem,
+            makeUpdater: makeUpdater
         )
     }
 }
