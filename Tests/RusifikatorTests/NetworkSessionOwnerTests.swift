@@ -406,8 +406,7 @@ private final class ControlledNetworkProtocol: URLProtocol, @unchecked Sendable 
         lock.withLock { active.removeAll { $0 === target } }
     }
     static func complete(authorization: String, content: String) {
-        let target = lock.withLock { active.first { $0.request.value(forHTTPHeaderField: "Authorization") == authorization } }
-        guard let target else { XCTFail("Expected matching delivered request"); return }
+        guard let target = target(authorization) else { return }
         target.client?.urlProtocol(target, didReceive: HTTPURLResponse(url: target.request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: [:])!, cacheStoragePolicy: .notAllowed)
         let response = Data("{\"choices\":[{\"message\":{\"content\":\"\(content)\"}}]}".utf8)
         target.client?.urlProtocol(target, didLoad: response)

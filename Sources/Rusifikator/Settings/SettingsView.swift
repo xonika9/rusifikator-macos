@@ -73,7 +73,6 @@ final class SettingsViewModel {
     private(set) var loginItemMessage: String?
 
     private(set) var isSaving = false
-    private(set) var isLoadingCredentials = false
     private(set) var isShuttingDown = false
 
     private(set) var currentAPIKey: String
@@ -313,7 +312,6 @@ final class SettingsViewModel {
         loadID = nil
         loadTask?.cancel()
         loadTask = nil
-        isLoadingCredentials = false
     }
 
     private func reloadCredential() {
@@ -325,7 +323,6 @@ final class SettingsViewModel {
         let generation = draftGeneration
         let id = UUID()
         loadID = id
-        isLoadingCredentials = true
         loadTask = Task { [weak self, credentials] in
             let outcome: Result<String, any Error>
             do { outcome = .success(try await credentials.apiKey(for: url) ?? "") }
@@ -333,7 +330,6 @@ final class SettingsViewModel {
             guard let self, !Task.isCancelled, self.loadID == id else { return }
             self.loadID = nil
             self.loadTask = nil
-            self.isLoadingCredentials = false
             switch outcome {
             case let .success(key):
                 self.currentAPIKey = key
