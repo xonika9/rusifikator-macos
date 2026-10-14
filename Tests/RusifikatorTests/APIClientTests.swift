@@ -397,7 +397,7 @@ final class APIClientTests: XCTestCase {
             diagnosticSink: { messages.append($0.message) }
         )
         URLProtocolStub.handler = { _ in
-            throw URLError(.timedOut)
+            throw URLError(.timedOut, userInfo: [NSLocalizedDescriptionKey: "sk-secret-value Секретное содержимое расшифровки"])
         }
 
         do {
@@ -427,6 +427,31 @@ final class APIClientTests: XCTestCase {
         XCTAssertTrue(combined.contains("-1001"))
         XCTAssertTrue(combined.contains("host=example.com"))
         XCTAssertTrue(combined.contains("model=proxy/model"))
+        URLProtocolStub.handler = { _ in
+            throw NSError(
+                domain: "sk-secret-value Секретное содержимое расшифровки",
+                code: 7,
+                userInfo: [NSLocalizedDescriptionKey: "sk-secret-value Секретное содержимое расшифровки"]
+            )
+        }
+        do {
+            _ = try await client.clean(
+                text: transcript,
+                baseURL: XCTUnwrap(URL(string: "https://example.com")),
+                model: "proxy/model",
+                apiKey: secret,
+                systemPrompt: "SYSTEM",
+                requestID: fixedRequestID
+            )
+            XCTFail("Expected untrusted transport failure")
+        } catch {
+            XCTAssertEqual(error as? APIError, .transport(requestCode: "A1B2C3D4"))
+        }
+        for message in messages.values {
+            XCTAssertFalse(message.contains(secret))
+            XCTAssertFalse(message.contains(transcript))
+        }
+
     }
 
     func testCancellationIsCategorizedWithoutRetry() async throws {
@@ -581,6 +606,9 @@ final class APIClientTests: XCTestCase {
         )
 
         XCTAssertNil(configuration.urlCache)
+        XCTAssertNil(configuration.httpCookieStorage)
+        XCTAssertNil(configuration.urlCredentialStorage)
+        XCTAssertFalse(configuration.httpShouldSetCookies)
         XCTAssertEqual(configuration.requestCachePolicy, .reloadIgnoringLocalCacheData)
         XCTAssertEqual(configuration.timeoutIntervalForRequest, 90)
         XCTAssertEqual(configuration.timeoutIntervalForResource, 90)

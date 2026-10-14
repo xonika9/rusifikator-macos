@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     let updates: UpdateViewModel
     let coordinator: PopoverCoordinator
 
+    private let networkSessions = NetworkSessionOwner()
     private let popover = NSPopover()
     private var statusItem: NSStatusItem?
     private var updater: SparkleUpdaterService?
@@ -16,8 +17,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     override init() {
         let history = HistoryStore()
         self.history = history
-        editor = EditorViewModel(history: history)
-        settings = SettingsViewModel()
+        let client = OpenAICompatibleClient(sessionOwner: networkSessions)
+        editor = EditorViewModel(apiClient: OpenAIEditorAPIClient(client: client), history: history)
+        settings = SettingsViewModel(connectionChecker: client)
         updates = UpdateViewModel()
         coordinator = PopoverCoordinator()
         super.init()
@@ -40,8 +42,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     func applicationShouldTerminate(
         _ sender: NSApplication
     ) -> NSApplication.TerminateReply {
+        networkSessions.close()
         Task {
             await history.flushPendingPersistence()
+            await networkSessions.drain()
             sender.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater

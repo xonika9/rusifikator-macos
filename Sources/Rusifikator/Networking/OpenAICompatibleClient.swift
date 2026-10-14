@@ -1,6 +1,18 @@
 import Foundation
 import OSLog
 
+protocol NetworkClock: Sendable {
+    var now: ContinuousClock.Instant { get }
+    func sleep(until deadline: ContinuousClock.Instant) async throws
+}
+
+struct ContinuousNetworkClock: NetworkClock {
+    var now: ContinuousClock.Instant { ContinuousClock.now }
+    func sleep(until deadline: ContinuousClock.Instant) async throws {
+        try await ContinuousClock().sleep(until: deadline)
+    }
+}
+
 struct OpenAICompatibleClient: Sendable {
     static let maximumResponseBytes = 4 * 1_024 * 1_024
     static let processingTimeout: TimeInterval = 90
@@ -11,16 +23,20 @@ struct OpenAICompatibleClient: Sendable {
         category: "network"
     )
 
-    private let protocolClasses: [AnyClass]?
+    private let sessionOwner: NetworkSessionOwner
+    private let clock: any NetworkClock
     private let diagnosticSink: @Sendable (NetworkDiagnosticEvent) -> Void
 
     init(
         protocolClasses: [AnyClass]? = nil,
+        sessionOwner: NetworkSessionOwner? = nil,
+        clock: any NetworkClock = ContinuousNetworkClock(),
         diagnosticSink: @escaping @Sendable (NetworkDiagnosticEvent) -> Void = {
             OpenAICompatibleClient.log($0)
         }
     ) {
-        self.protocolClasses = protocolClasses
+        self.sessionOwner = sessionOwner ?? NetworkSessionOwner(protocolClasses: protocolClasses)
+        self.clock = clock
         self.diagnosticSink = diagnosticSink
     }
 
@@ -207,58 +223,51 @@ struct OpenAICompatibleClient: Sendable {
         startedAt: Date,
         timeoutInterval: TimeInterval
     ) async throws -> Data {
-        var canRetrySecureConnectionFailure = true
-        var attemptTimeout = timeoutInterval
-
-        while true {
-            let transfer = StreamingRequest(
-                maximumBytes: Self.maximumResponseBytes,
-                allowedOrigin: allowedOrigin,
-                requestCode: requestCode,
-                timeoutSeconds: Int(timeoutInterval),
-                startedAt: startedAt,
-                diagnosticSink: diagnosticSink
-            )
-            do {
-                return try await transfer.load(
-                    request,
-                    configuration: Self.makeConfiguration(
-                        timeoutInterval: attemptTimeout,
-                        protocolClasses: protocolClasses
-                    )
-                )
-            } catch let error as URLError
-                where error.code == .secureConnectionFailed
-                    && canRetrySecureConnectionFailure {
-                let elapsed = Date().timeIntervalSince(startedAt)
-                guard Self.retryTimeout(
-                    totalTimeout: timeoutInterval,
-                    elapsed: elapsed,
-                    retryDelay: Self.secureConnectionRetryDelay
-                ) != nil else {
-                    throw error
-                }
-                canRetrySecureConnectionFailure = false
-                diagnosticSink(
-                    .retryingTLS(
-                        requestCode: requestCode,
-                        delayMilliseconds: Int(
-                            Self.secureConnectionRetryDelay * 1_000
-                        )
-                    )
-                )
-                try await Task.sleep(
-                    for: .seconds(Self.secureConnectionRetryDelay)
-                )
-                guard let remainingTimeout = Self.retryTimeout(
-                    totalTimeout: timeoutInterval,
-                    elapsed: Date().timeIntervalSince(startedAt),
-                    retryDelay: 0
-                ) else {
-                    throw error
-                }
-                attemptTimeout = remainingTimeout
+        let clock = self.clock
+        let deadline = clock.now.advanced(by: .seconds(timeoutInterval))
+        return try await withThrowingTaskGroup(of: Data.self) { group in
+            group.addTask {
+                try await clock.sleep(until: deadline)
+                throw APIError.clientTimeout(seconds: Int(timeoutInterval), requestCode: requestCode)
             }
+            group.addTask {
+                var canRetrySecureConnectionFailure = true
+                while true {
+                    try Task.checkCancellation()
+                    let lease = try await sessionOwner.acquire(origin: allowedOrigin, timeout: timeoutInterval)
+                    let transfer = StreamingRequest(
+                        maximumBytes: Self.maximumResponseBytes,
+                        allowedOrigin: allowedOrigin,
+                        requestCode: requestCode,
+                        timeoutSeconds: Int(timeoutInterval),
+                        startedAt: startedAt,
+                        diagnosticSink: diagnosticSink
+                    )
+                    do {
+                        return try await transfer.load(request, lease: lease)
+                    } catch let error as URLError
+                        where error.code == .secureConnectionFailed && canRetrySecureConnectionFailure {
+                        let remaining = clock.now.duration(to: deadline)
+                        let remainingSeconds = TimeInterval(remaining.components.seconds)
+                            + TimeInterval(remaining.components.attoseconds) / 1e18
+                        guard Self.retryTimeout(
+                            totalTimeout: remainingSeconds,
+                            elapsed: 0,
+                            retryDelay: Self.secureConnectionRetryDelay
+                        ) != nil else {
+                            throw error
+                        }
+                        canRetrySecureConnectionFailure = false
+                        diagnosticSink(.retryingTLS(
+                            requestCode: requestCode,
+                            delayMilliseconds: Int(Self.secureConnectionRetryDelay * 1_000)
+                        ))
+                        try await clock.sleep(until: clock.now.advanced(by: .seconds(Self.secureConnectionRetryDelay)))
+                    }
+                }
+            }
+            defer { group.cancelAll() }
+            return try await group.next()!
         }
     }
 
@@ -377,6 +386,8 @@ struct OpenAICompatibleClient: Sendable {
     ) -> URLSessionConfiguration {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.urlCache = nil
+        configuration.httpCookieStorage = nil
+        configuration.urlCredentialStorage = nil
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.timeoutIntervalForRequest = timeoutInterval
         configuration.timeoutIntervalForResource = timeoutInterval
@@ -421,7 +432,7 @@ private final class StreamingRequest: NSObject, @unchecked Sendable {
     private let lock = NSLock()
 
     private var continuation: CheckedContinuation<Data, Error>?
-    private var session: URLSession?
+    private var lease: NetworkSessionOwner.Lease?
     private var task: URLSessionDataTask?
     private var buffer = Data()
     private var isFinished = false
@@ -445,31 +456,27 @@ private final class StreamingRequest: NSObject, @unchecked Sendable {
 
     func load(
         _ request: URLRequest,
-        configuration: URLSessionConfiguration
+        lease: NetworkSessionOwner.Lease
     ) async throws -> Data {
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
-                let task = lock.withLock { () -> URLSessionDataTask? in
-                    guard !cancellationRequested else {
-                        return nil
+                do {
+                    let task = try lock.withLock { () throws -> URLSessionDataTask? in
+                        guard !cancellationRequested else { return nil }
+                        let task = try lease.dataTask(with: request, delegate: self)
+                        self.continuation = continuation
+                        self.lease = lease
+                        self.task = task
+                        return task
                     }
-
-                    self.continuation = continuation
-                    let session = URLSession(
-                        configuration: configuration,
-                        delegate: self,
-                        delegateQueue: nil
-                    )
-                    let task = session.dataTask(with: request)
-                    self.session = session
-                    self.task = task
-                    return task
+                    guard let task else {
+                        continuation.resume(throwing: APIError.cancelled)
+                        return
+                    }
+                    task.resume()
+                } catch {
+                    continuation.resume(throwing: error)
                 }
-                guard let task else {
-                    continuation.resume(throwing: APIError.cancelled)
-                    return
-                }
-                task.resume()
             }
         } onCancel: {
             self.cancel()
@@ -491,26 +498,21 @@ private final class StreamingRequest: NSObject, @unchecked Sendable {
             guard !isFinished else {
                 return nil as (
                     CheckedContinuation<Data, Error>?,
-                    URLSessionDataTask?,
-                    URLSession?
+                    URLSessionDataTask?
                 )?
             }
             isFinished = true
-            let resources = (continuation, task, session)
+            let resources = (continuation, task)
             continuation = nil
             task = nil
-            session = nil
             return resources
         }
-        guard let (continuation, task, session) = resources else {
+        guard let (continuation, task) = resources else {
             return
         }
 
         if cancelTask {
             task?.cancel()
-            session?.invalidateAndCancel()
-        } else {
-            session?.finishTasksAndInvalidate()
         }
         continuation?.resume(with: result)
     }
@@ -639,15 +641,21 @@ extension StreamingRequest: URLSessionTaskDelegate {
         task: URLSessionTask,
         didCompleteWithError error: (any Error)?
     ) {
+        let lease = lock.withLock { () -> NetworkSessionOwner.Lease? in
+            let lease = self.lease
+            self.lease = nil
+            return lease
+        }
+        lease?.release()
         let nsError = error as NSError?
         diagnosticSink(
             .completed(
                 requestCode: requestCode,
                 failure: nsError.map {
                     NetworkDiagnosticFailure(
-                        domain: $0.domain,
+                        domain: $0.domain == NSURLErrorDomain ? NSURLErrorDomain : "Transport",
                         code: $0.code,
-                        description: $0.localizedDescription
+                        description: "Transport failure"
                     )
                 },
                 bytesSent: task.countOfBytesSent,
@@ -669,7 +677,8 @@ extension StreamingRequest: URLSessionTaskDelegate {
                     )
                 )
             } else if urlError.code == .secureConnectionFailed {
-                finish(.failure(urlError))
+                let receivedData = lock.withLock { !buffer.isEmpty }
+                finish(.failure(receivedData ? APIError.transport(requestCode: requestCode) : urlError))
             } else {
                 finish(.failure(APIError.transport(requestCode: requestCode)))
             }
