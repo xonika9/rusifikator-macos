@@ -54,7 +54,7 @@ Before the first run, open the settings, enter your API key and press Save. The 
 
 From there the loop is simple: paste the transcript, run the cleanup, copy the result. The connection test next to the settings sends a short service string and reports whether the provider answers, without saving the draft values from the window.
 
-Settings include an optional “Частичный показ” mode for reading the text while processing continues. It is off by default. Preview text cannot be selected or copied; only the confirmed final answer enters history. Cancellation, an error or an incomplete response clears the preview. A regular complete response from the server is accepted without resending the request. For an incompatible response, turn the mode off manually before trying again: the application never resends the text automatically to switch modes.
+Settings include an optional “Стриминг ответа” mode for reading the text while processing continues. It is off by default. Preview text cannot be selected or copied; only the confirmed final answer enters history. Cancellation, an error or an incomplete response clears the preview. A regular complete response from the server is accepted without resending the request. For an incompatible response, turn the mode off manually before trying again: the application never resends the text automatically to switch modes.
 
 If a VPN drops the secure connection before the text is sent, the application
 retries once. If the connection still fails, the error message points to the VPN

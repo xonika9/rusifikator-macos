@@ -567,17 +567,7 @@ struct SettingsView: View {
                         )
                     }
 
-                    fieldGroup(
-                        title: "Частичный показ",
-                        hint: "Позволяет читать ответ до конца. Копировать можно только готовый текст. Если сервер не поддерживает режим, выключи его и отправь текст снова."
-                    ) {
-                        Toggle("Показывать текст во время обработки", isOn: $model.draftPartialPreviewEnabled)
-                            .toggleStyle(.switch)
-                            .controlSize(.small)
-                            .font(.system(size: 11))
-                            .tint(AppTheme.accent)
-                    }
-
+                    streamingRow
                     loginItemRow
                     connectionPanel
                     updatePanel
@@ -664,6 +654,23 @@ struct SettingsView: View {
                 RoundedRectangle(cornerRadius: 8)
                     .stroke(AppTheme.line, lineWidth: 1)
             }
+    }
+
+    private var streamingRow: some View {
+        HStack(spacing: 18) {
+            Text("Стриминг ответа")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(AppTheme.text)
+
+            Spacer()
+
+            Toggle("Стриминг ответа", isOn: $model.draftPartialPreviewEnabled)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .tint(AppTheme.accent)
+        }
+        .frame(minHeight: 42)
     }
 
     private var loginItemRow: some View {
