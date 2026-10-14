@@ -9,18 +9,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     let updates: UpdateViewModel
     let coordinator: PopoverCoordinator
 
-    private let credentials = AsyncCredentialStore()
+    private let credentials: AsyncCredentialStore
     private let networkSessions = NetworkSessionOwner()
     private let popover = NSPopover()
     private var statusItem: NSStatusItem?
-    private var updater: SparkleUpdaterService?
+    private var updater: (any UpdateChecking)?
+    private let makeUpdater: (@escaping (UpdateReport) -> Void) -> any UpdateChecking
 
-    override init() {
-        let history = HistoryStore()
+    override convenience init() {
+        self.init(
+            credentials: AsyncCredentialStore(),
+            history: HistoryStore(),
+            settingsStore: SettingsStore(),
+            loginItem: LoginItemController(),
+            makeUpdater: { SparkleUpdaterService(report: $0) }
+        )
+    }
+
+    init(
+        credentials: AsyncCredentialStore,
+        history: HistoryStore,
+        settingsStore: SettingsStore,
+        loginItem: LoginItemController,
+        makeUpdater: @escaping (@escaping (UpdateReport) -> Void) -> any UpdateChecking
+    ) {
+        self.credentials = credentials
+        self.makeUpdater = makeUpdater
         self.history = history
         let client = OpenAICompatibleClient(sessionOwner: networkSessions)
         editor = EditorViewModel(apiClient: OpenAIEditorAPIClient(client: client), credentials: credentials, history: history)
-        settings = SettingsViewModel(credentials: credentials, connectionChecker: client)
+        settings = SettingsViewModel(store: settingsStore, credentials: credentials, connectionChecker: client, loginItem: loginItem)
         updates = UpdateViewModel()
         coordinator = PopoverCoordinator()
         super.init()
@@ -99,6 +117,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             width: PopoverLayout.width,
             height: PopoverLayout.height
         )
+    }
+
+    private func installPopoverContentIfNeeded() {
+        guard popover.contentViewController == nil else { return }
         popover.contentViewController = NSHostingController(
             rootView: PopoverRootView(
                 coordinator: coordinator,
@@ -112,7 +134,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private func configureUpdater() {
         let updates = updates
-        let service = SparkleUpdaterService { report in
+        let service = makeUpdater { report in
             updates.handle(report)
         }
         updater = service
@@ -176,6 +198,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         guard let button = statusItem?.button else {
             return
         }
+
+        installPopoverContentIfNeeded()
 
         if popover.isShown {
             popover.contentViewController?.view.window?.makeKey()
