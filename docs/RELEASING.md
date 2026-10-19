@@ -18,7 +18,9 @@ does not increase is invisible to installed copies.
 
 ## Scripts
 
-All of them are local and offline. Nothing in this set publishes or uploads.
+These scripts build and check local artifacts; none publishes or uploads them.
+SwiftPM may need the network to fetch dependencies and binary artifacts,
+especially on the first build.
 
 ```sh
 scripts/release-checks.sh            # the whole mandatory gate
@@ -32,6 +34,13 @@ system prompt with its fixture, checks that both version fields agree and that
 key and token patterns, packages the application, smoke-tests the bundle
 including the single-instance guard, and finally builds and verifies the
 release artifacts.
+
+Regression tests for the release guards run without building the application,
+accessing the Keychain or publishing anything:
+
+```sh
+python3 scripts/test-release-scripts.py
+```
 
 Two things routinely surprise a first run:
 
@@ -49,8 +58,16 @@ Two things routinely surprise a first run:
 3. Set it in both `Info.plist` fields.
 4. Move `Unreleased` into a dated section for that version.
 5. Run `scripts/release-checks.sh`.
-6. Publish a release tagged `v<canonical version>` with `Rusifikator-<version>.dmg`,
-   `appcast.xml` and `SHA256SUMS` attached.
+6. Create a draft release tagged `v<canonical version>` at the release commit.
+   Attach `Rusifikator-<version>.dmg`, `appcast.xml` and `SHA256SUMS`. Verify
+   that all three uploads completed before publishing the draft. A failed
+   upload leaves the release in draft state and the previous feed in service.
+7. Download those three published attachments into a separate temporary
+   directory, then run `scripts/verify-release-artifacts.sh <download-directory>`.
+   The default invocation checks local `dist/release`, which cannot prove that
+   the published files are correct. A downloaded set does not need
+   `RELEASE_NOTES.md`; local preparation still requires it. Missing
+   `sign_update` blocks verification instead of skipping the signature check.
 
 `appcast.xml` must be attached to **every** release. The feed address resolves
 to the newest release, so a release published without it breaks updating for

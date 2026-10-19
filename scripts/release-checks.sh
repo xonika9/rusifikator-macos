@@ -45,16 +45,17 @@ step "no secrets in the working tree"
 # clean tree. docs/research holds interface prototypes with obvious placeholder
 # values and never ships.
 set +e
-secret_hits=$(git -C "$release_repo_root" grep -nIE \
+# Only filenames may leave the scanner: matching lines can contain real keys.
+secret_hits=$(git -C "$release_repo_root" grep -lIE \
   -e '-----BEGIN [A-Z ]*PRIVATE KEY' \
   -e '(^|[^A-Za-z0-9_-])sk-[A-Za-z0-9]{16,}' \
   -e 'ghp_[A-Za-z0-9]{20,}' \
   -e 'github_pat_[A-Za-z0-9_]{20,}' \
-  -- . ':(exclude)scripts/release-checks.sh' ':(exclude)docs/research' 2>&1)
+  -- . ':(exclude)scripts/release-checks.sh' ':(exclude)docs/research' 2>/dev/null)
 secret_status=$?
 set -e
 (( secret_status <= 1 )) || {
-  print -u2 "The secret scan could not run: $secret_hits"
+  print -u2 "The secret scan could not run (exit $secret_status)."
   exit 1
 }
 [[ -z "$secret_hits" ]] || {
