@@ -53,23 +53,16 @@ is a repository-relative symlink to it, so Claude Code and Codex read one
 source. It is a private repository skill and must never be bundled into the
 application.
 
-Release scripts, all local and offline:
-
-```sh
-scripts/release-checks.sh            # every mandatory check
-scripts/build-release-artifacts.sh   # dmg, appcast.xml, checksums, notes
-scripts/verify-release-artifacts.sh  # verify what was built
-```
-
 Publication is a separate, explicitly authorised step. The full procedure lives
 in `docs/RELEASING.md`.
 
 ## Public repository
 
-This repository is public. Keep maintainer-only material out of `README.md`,
-never commit local absolute paths, and keep the community files
-(`LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`,
-`.github/`) consistent with the other public repositories of this owner.
+This repository is public. Keep maintainer-only material out of `README.md`
+and never commit local absolute paths. For consistency of the community files
+(`LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `.github/`)
+with the owner's other public repositories, use an owner-designated reference.
+If none is documented, ask which repository to follow before changing policy.
 
 ## Validation
 
@@ -85,6 +78,9 @@ After changing the system prompt:
 ```sh
 scripts/test-system-prompt.sh
 ```
+
+After changing release scripts or their regression tests, run the release-guard
+regression checks documented in `docs/RELEASING.md`.
 
 After changing packaging, resources, or application metadata:
 
