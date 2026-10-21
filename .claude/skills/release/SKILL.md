@@ -24,7 +24,7 @@ Resolve the repository root from this skill's location, then read:
 
 - the worktree, the current branch, the remotes and the latest `v*` tag;
 - the complete commit range and diff from that tag to the candidate, including uncommitted and untracked files;
-- `README.md`, `README.en.md`, `docs/RELEASING.md`, `CONTRIBUTING.md`, `AGENTS.md`, `DESIGN.md`, `CHANGELOG.md`;
+- `README.md`, `README.en.md`, `docs/RELEASING.md`, `CONTRIBUTING.md`, `DESIGN.md`, `CHANGELOG.md`;
 - `Sources/Rusifikator/Resources/Rusifikator-Info.plist` — `CFBundleShortVersionString`, `CFBundleVersion`, `SUFeedURL`, `SUPublicEDKey`;
 - `scripts/release-metadata.sh`, `scripts/release-checks.sh`, `scripts/build-release-artifacts.sh`, `scripts/verify-release-artifacts.sh`.
 
@@ -34,9 +34,9 @@ Reconcile every user-visible change since the latest public tag with the release
 
 ## Prevent documentation drift
 
-`README.md` is the public front page and owns installation, usage, updating, the limits of a build without Developer ID and the privacy disclosures; `README.en.md` is its translation and must move with it. `docs/RELEASING.md` owns version numbering, the release scripts, storage of the update signing key, preparation of the next version and recovery from a failed release. `CONTRIBUTING.md` owns the contributor environment and checks. Trace every changed behaviour, command, address and claim in the candidate to its owning section. A changed public contract needs an accurate section or an evidence-backed determination that it has no documentation impact; the absence of a documentation file from the diff is not that evidence. Keep maintainer-only material out of `README.md`.
+Follow the source ownership defined in the repository instructions. Trace every changed behaviour, command, address and claim in the candidate to its owning section. A changed public contract needs an accurate section or an evidence-backed determination that it has no documentation impact; the absence of a documentation file from the diff is not that evidence.
 
-`AGENTS.md` owns the repository contracts and `DESIGN.md` the visual constraints. Correct them when the candidate changes what they describe.
+Correct the repository contracts and visual constraints when the candidate changes what they describe.
 
 Load the installed `humanizer-ru` skill for the final Russian prose and apply its documentation-level rules without changing facts, commands, identifiers, links or supported-behaviour claims. Resolve the skill from the live runtime rather than a personal absolute path.
 

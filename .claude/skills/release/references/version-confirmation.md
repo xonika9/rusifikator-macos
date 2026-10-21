@@ -1,11 +1,8 @@
 # Structured version confirmation
 
-Use the runtime's structured user-input tool:
+Use an available structured user-input tool whose current contract permits required confirmation. Discover the live tools, their availability and their schemas before constructing the question; do not rely on a fixed tool name.
 
-- Claude Code: `AskUserQuestion`;
-- Codex: `request_user_input`.
-
-Discover the live tool schema before constructing the question. Present the recommended version in both forms the repository uses — the displayed `X.Y` and the canonical `X.Y.Z` — together with the strongest changes that determine the bump, and a way to confirm it, name another version, or cancel the release.
+Present the recommended version in both forms the repository uses — the displayed `X.Y` and the canonical `X.Y.Z` — together with the strongest changes that determine the bump, and a way to confirm it, name another version, or cancel the release.
 
 Wait for an affirmative structured answer before touching either version field in `Sources/Rusifikator/Resources/Rusifikator-Info.plist` or moving anything out of `Unreleased`.
 
