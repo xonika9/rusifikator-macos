@@ -52,7 +52,7 @@ The icon appears in the menu bar. A left click opens the editor, a right click o
 
 Before the first run, open the settings, enter your API key and press Save. The defaults are the endpoint `https://liteapi.gotacat.dev/`, the model `proxy/gpt-5.6-terra` and the route `POST /v1/chat/completions`; all of them can be pointed at any other OpenAI-compatible provider.
 
-From there the loop is simple: paste the transcript, run the cleanup, copy the result. Recognition errors are corrected when the text makes the intended wording unambiguous; unclear words stay as transcribed. The connection test next to the settings sends a short service string and reports whether the provider answers, without saving the draft values from the window.
+From there the loop is simple: paste the transcript, run the cleanup, copy the result. Unclear and garbled passages are corrected when the text makes the intended wording unambiguous; otherwise the words stay as transcribed. Items numbered aloud become a numbered list. The connection test next to the settings sends a short service string and reports whether the provider answers, without saving the draft values from the window.
 
 Settings include an optional “Стриминг ответа” mode for reading the text while processing continues. It is off by default. Preview text cannot be selected or copied; only the confirmed final answer enters history. Cancellation, an error or an incomplete response clears the preview. A regular complete response from the server is accepted without resending the request. For an incompatible response, turn the mode off manually before trying again: the application never resends the text automatically to switch modes.
 
