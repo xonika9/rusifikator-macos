@@ -13,10 +13,10 @@ This is a private repository-local skill for Claude Code and Codex. Its canonica
 
 ## Select the mode
 
-- **Prepare** — the request is to prepare a release. Propose the version, wait for confirmation, update the release files, run the release gate. Stop before commit, push, tag and publication.
+- **Prepare** — the request is to prepare a release. Determine the calendar version, update the release files, run the release gate. Stop before commit, push, tag and publication.
 - **Publish** — the owner explicitly asks to make or ship the release. Everything preparation does, plus a release commit, a push to `main`, the GitHub Release, and verification that an installed previous version can see the update.
 
-A request to commit, push, edit `CHANGELOG.md`, build, package or run checks is not release authority. «Сделай релиз» grants publication authority; it does not waive the version confirmation gate.
+A request to commit, push, edit `CHANGELOG.md`, build, package or run checks is not release authority. «Сделай релиз» grants publication authority, including the computed version.
 
 ## Establish the candidate
 
@@ -40,44 +40,37 @@ Correct the repository contracts and visual constraints when the candidate chang
 
 Load the installed `humanizer-ru` skill for the final Russian prose and apply its documentation-level rules without changing facts, commands, identifiers, links or supported-behaviour claims. Resolve the skill from the live runtime rather than a personal absolute path.
 
-## Choose and confirm the version
+## Determine the version
 
-Both version fields move together: `CFBundleShortVersionString` is what the owner sees (`1.1`) and `CFBundleVersion` is the canonical SemVer version the update channel compares (`1.1.0`). The canonical version must strictly increase — a version that does not is invisible to installed copies.
+Both version fields hold the same calendar version `YY.M.D.N` defined in `docs/RELEASING.md`. After fetching the public tags, `scripts/next-version.sh` prints the next one. Announce it and continue within the requested mode without a separate confirmation.
 
-Propose the version from the strongest change in the full candidate and cite the changes that determine the bump:
-
-- `MAJOR` — an incompatible change to how the application is installed, updated, configured or authorised, including a new update feed address or signing key;
-- `MINOR` — a new user-visible capability or an intentional change to existing behaviour;
-- `PATCH` — a backward-compatible correction that does not intend to change behaviour;
-- a mixed candidate takes the highest applicable bump.
-
-Confirm the version through the runtime's structured question tool as described in [version-confirmation.md](references/version-confirmation.md), even when the request already names a version. Before confirmation, change no version field, move nothing out of `Unreleased`, and create no release commit, tag or external release. A version that already has a public tag or release is immutable: propose the next one instead.
+A version the owner names takes precedence when it has a valid date, is newer than the latest public release and has no public tag or release; otherwise report the conflict and ask only about that. When midnight in Moscow passes before the release commit, recompute a computed version and align the changelog date.
 
 ## Prepare the release files
 
-After confirmation:
+With the selected version:
 
-- set the confirmed version in both `Info.plist` fields;
-- move the populated `Unreleased` content into `## X.Y.Z — YYYY-MM-DD`;
+- set it in both `Info.plist` fields;
+- move the populated `Unreleased` content into `## YY.M.D.N — YYYY-MM-DD` with the same date;
 - leave an empty `Unreleased` template with `Главное`, `Установка и обновление`, `Совместимость` and `Несовместимые изменения`;
 - write the notes from the owner's point of view, covering the whole candidate, and state `Нет.` explicitly when there are no incompatible changes;
 - apply the identified documentation corrections.
 
-Never introduce private paths, credentials, tokens, API keys, transcripts or fabricated evidence, and never include changes outside the confirmed candidate.
+Never introduce private paths, credentials, tokens, API keys, transcripts or fabricated evidence, and never include changes outside the candidate.
 
 ## Release gate
 
 Run the complete command set in [checks.md](references/checks.md). A failed command blocks preparation and publication until it is fixed or the owner explicitly changes scope. A partial gate is never presented as a successful release.
 
-Preparation is complete when both version fields hold the confirmed version, `CHANGELOG.md` carries that version with its date and a reset `Unreleased`, the notes cover the tag-to-candidate diff, the documentation matches the candidate, every check passes, and `dist/release` holds a disk image, a signed `appcast.xml`, checksums and release notes for that version.
+Preparation is complete when both version fields hold the selected version, `CHANGELOG.md` carries that version with its date and a reset `Unreleased`, the notes cover the tag-to-candidate diff, the documentation matches the candidate, every check passes, and `dist/release` holds a disk image, a signed `appcast.xml`, checksums and release notes for that version.
 
 ## Publish
 
 Publication needs every preparation condition plus explicit publication authority.
 
-Commit the coherent release candidate without absorbing unrelated changes, push it to `main` without force, then create a draft release for `v<canonical version>` from that commit. Attach the disk image, `appcast.xml` and `SHA256SUMS` from `scripts/build-release-artifacts.sh`. Verify the complete attachment set before publishing the draft: an incomplete release must never become the latest release and replace the working update feed. If an upload fails, leave the release as a draft and report the blocker. The repository has no release automation, so this skill creates the tag and the GitHub Release itself; if automation is ever added, let it own them and do not create them in parallel.
+Commit the coherent release candidate without absorbing unrelated changes, push it to `main` without force, then create a draft release for `v<version>` from that commit. Attach the disk image, `appcast.xml` and `SHA256SUMS` from `scripts/build-release-artifacts.sh`. Verify the complete attachment set before publishing the draft: an incomplete release must never become the latest release and replace the working update feed. If an upload fails, leave the release as a draft and report the blocker. The repository has no release automation, so this skill creates the tag and the GitHub Release itself; if automation is ever added, let it own them and do not create them in parallel.
 
-Name the release `Русификатор <displayed version>` — `Русификатор 1.2` for `1.2 (1.2.0)`. The release list is a public shelf read top to bottom, so the title carries the product name and the version the owner sees, never the canonical version, the tag or a bare number. `scripts/build-release-artifacts.sh` already writes that heading into the release notes and `scripts/make-dmg.sh` into the volume name; read the title from them and from the previous releases instead of inventing one. Verify the published list afterwards: a title that breaks the row of its neighbours is a defect, and it is corrected in place — the title is metadata, not a released artifact.
+Name the release `Русификатор <version>` — `Русификатор 26.11.22.1`. The release list is a public shelf read top to bottom, so the title carries the product name and the version, never the tag or a bare number. `scripts/build-release-artifacts.sh` already writes that heading into the release notes and `scripts/make-dmg.sh` into the volume name; read the title from them and from the previous releases instead of inventing one. Verify the published list afterwards: a title that breaks the row of its neighbours is a defect, and it is corrected in place — the title is metadata, not a released artifact.
 
 `appcast.xml` must be attached to every release. The update feed resolves to the newest release, so a release published without it breaks updating for every installed copy.
 
@@ -93,8 +86,8 @@ When the branch, the remote, the signing key, the checks or the publication rout
 
 Publication is complete only when all of the following hold, each read from the real artifact rather than from a report:
 
-- the GitHub Release for `v<canonical version>` exists and its tag points at the release commit;
-- its title reads `Русификатор <displayed version>` and stands in one row with the previous releases;
+- the GitHub Release for `v<version>` exists and its tag points at the release commit;
+- its title reads `Русификатор <version>` and stands in one row with the previous releases;
 - the disk image downloads and its checksum matches `SHA256SUMS`;
 - `appcast.xml` is reachable at the feed address in `SUFeedURL` and names the released version;
 - download the three published attachments into a separate temporary directory and run `scripts/verify-release-artifacts.sh <download-directory>` successfully against those files; a pass against local `dist/release` is not publication evidence;

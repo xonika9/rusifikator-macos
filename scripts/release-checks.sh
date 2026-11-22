@@ -21,23 +21,25 @@ step "system prompt"
 "$release_repo_root/scripts/test-system-prompt.sh"
 
 step "version consistency"
-[[ -n "$display_version" ]] || {
-  print -u2 "CFBundleShortVersionString is empty"
+[[ "$canonical_version" =~ '^([0-9]{2})\.([1-9][0-9]?)\.([1-9][0-9]?)\.([1-9][0-9]*)$' ]] || {
+  print -u2 "CFBundleVersion must be a YY.M.D.N version, got: $canonical_version"
   exit 1
 }
-[[ "$canonical_version" == <->.<->.<-> ]] || {
-  print -u2 "CFBundleVersion must be a SemVer version, got: $canonical_version"
+release_date=$(printf '20%s-%02d-%02d' "${(@)match[1,3]}")
+# BSD date normalises an impossible date instead of rejecting it.
+[[ "$(date -j -f '%Y-%m-%d' "$release_date" '+%Y-%m-%d' 2>/dev/null)" == "$release_date" ]] || {
+  print -u2 "CFBundleVersion does not carry a valid date: $canonical_version"
   exit 1
 }
-[[ "$canonical_version" == "$display_version"* ]] || {
-  print -u2 "Version $display_version and canonical $canonical_version disagree"
+[[ "$canonical_version" == "$display_version" ]] || {
+  print -u2 "CFBundleShortVersionString $display_version and CFBundleVersion $canonical_version disagree"
   exit 1
 }
-grep -q "^## $canonical_version " "$release_repo_root/CHANGELOG.md" || {
-  print -u2 "CHANGELOG.md has no released section for $canonical_version"
+grep -qxF "## $canonical_version — $release_date" "$release_repo_root/CHANGELOG.md" || {
+  print -u2 "CHANGELOG.md has no section '## $canonical_version — $release_date'"
   exit 1
 }
-print "$display_version ($canonical_version) is consistent"
+print "$canonical_version is consistent"
 
 step "no secrets in the working tree"
 # git grep uses POSIX regular expressions, so no \b here: the pattern would be
@@ -74,4 +76,4 @@ step "smoke test"
 step "release artifacts"
 "$release_repo_root/scripts/build-release-artifacts.sh"
 
-print "\nAll release checks passed for $display_version ($canonical_version)"
+print "\nAll release checks passed for $canonical_version"

@@ -14,39 +14,15 @@ final class AppMetadataTests: XCTestCase {
         )
     }
 
-    func testMenuHeaderDoesNotRepeatMatchingBuild() {
-        XCTAssertEqual(
-            AppMetadata.menuHeader(
-                info: [
-                    "CFBundleShortVersionString": "1.0",
-                    "CFBundleVersion": "1.0"
-                ]
-            ),
-            "Русификатор 1.0"
-        )
-    }
-
-    func testDisplayVersionAndItsCanonicalFormAreTreatedAsOneRelease() {
+    func testMenuHeaderDoesNotRepeatMatchingCalendarVersion() {
         let info: [String: Any] = [
-            "CFBundleShortVersionString": "1.0",
-            "CFBundleVersion": "1.0.0"
+            "CFBundleShortVersionString": "26.11.22.1",
+            "CFBundleVersion": "26.11.22.1"
         ]
 
-        XCTAssertEqual(AppMetadata.displayVersion(info: info), "1.0")
-        XCTAssertEqual(AppMetadata.canonicalVersion(info: info), "1.0.0")
-        XCTAssertEqual(AppMetadata.menuHeader(info: info), "Русификатор 1.0")
-    }
-
-    func testDifferentPatchLevelIsStillWorthShowing() {
-        XCTAssertEqual(
-            AppMetadata.menuHeader(
-                info: [
-                    "CFBundleShortVersionString": "1.0",
-                    "CFBundleVersion": "1.0.1"
-                ]
-            ),
-            "Русификатор 1.0 (1.0.1)"
-        )
+        XCTAssertEqual(AppMetadata.displayVersion(info: info), "26.11.22.1")
+        XCTAssertEqual(AppMetadata.canonicalVersion(info: info), "26.11.22.1")
+        XCTAssertEqual(AppMetadata.menuHeader(info: info), "Русификатор 26.11.22.1")
     }
 
     func testNonNumericBuildIsNeverHidden() {

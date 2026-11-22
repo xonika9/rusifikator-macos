@@ -188,8 +188,8 @@ final class UpdateViewModelTests: XCTestCase {
             "Установлена версия 1.0 (1.0.0)"
         )
 
-        let same = UpdateViewModel(installedVersion: "1.1.0", canonicalVersion: "1.1.0")
-        XCTAssertEqual(same.installedVersionDescription, "Установлена версия 1.1.0")
+        let same = UpdateViewModel(installedVersion: "26.11.22.1", canonicalVersion: "26.11.22.1")
+        XCTAssertEqual(same.installedVersionDescription, "Установлена версия 26.11.22.1")
     }
 
     private func makeModel(checker: UpdateCheckerSpy) -> UpdateViewModel {

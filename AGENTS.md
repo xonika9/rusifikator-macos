@@ -40,9 +40,9 @@ This is a native macOS 26 menu-bar application built as a Swift Package.
 - Keep updates on Sparkle. Serve the feed over HTTPS, keep `SUPublicEDKey` in
   the bundle, and keep the private EdDSA key in the Keychain only — never in
   the repository, the artifacts, the logs or the shipped application.
-- `CFBundleShortVersionString` is what the owner sees (`1.0`);
-  `CFBundleVersion` is the canonical SemVer version the update channel compares
-  (`1.0.0`). It must increase with every release.
+- `CFBundleShortVersionString` and `CFBundleVersion` hold the same calendar
+  version `YY.M.D.N`; the update channel compares it, so it must increase with
+  every release.
 - A published version is immutable. Never reuse, move or overwrite a released
   tag, release or artifact; correct it with a new version.
 

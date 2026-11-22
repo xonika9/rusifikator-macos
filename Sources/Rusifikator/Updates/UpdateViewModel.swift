@@ -6,10 +6,10 @@ import Observation
 final class UpdateViewModel {
     private(set) var state: UpdateState = .idle
 
-    /// Version the owner sees, for example `1.0`.
+    /// Version the owner sees, for example `26.11.22.1`.
     let installedVersion: String
 
-    /// Version the update channel compares, for example `1.0.0`.
+    /// Version the update channel compares.
     let canonicalVersion: String
 
     private(set) var isAvailable = false

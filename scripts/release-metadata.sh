@@ -9,9 +9,9 @@ release_repo_root=${0:A:h:h}
 plist_buddy=/usr/libexec/PlistBuddy
 info_plist_path="$release_repo_root/Sources/Rusifikator/Resources/Rusifikator-Info.plist"
 
-# Version the owner sees, for example 1.0.
+# Version the owner sees. Equal to the canonical version.
 display_version=$("$plist_buddy" -c "Print :CFBundleShortVersionString" "$info_plist_path")
-# Version SemVer tooling and the update channel compare, for example 1.0.0.
+# Calendar version YY.M.D.N the update channel compares, for example 26.11.22.1.
 canonical_version=$("$plist_buddy" -c "Print :CFBundleVersion" "$info_plist_path")
 release_tag="v$canonical_version"
 

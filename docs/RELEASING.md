@@ -6,15 +6,19 @@ from a release that went wrong.
 
 ## Version numbers
 
-Two fields move together in
-`Sources/Rusifikator/Resources/Rusifikator-Info.plist`:
+Releases use calendar versions `YY.M.D.N`, for example `26.11.22.1`: the release
+date in `Europe/Moscow` without leading zeros in month and day, then the number
+of the release that day, starting at 1. The number says nothing about
+compatibility; incompatible changes are described in the changelog.
 
-- `CFBundleShortVersionString` — what the owner sees, for example `1.1`;
-- `CFBundleVersion` — the canonical SemVer version the update channel compares,
-  for example `1.1.0`.
+`CFBundleShortVersionString` and `CFBundleVersion` in
+`Sources/Rusifikator/Resources/Rusifikator-Info.plist` hold the same value. It
+must strictly increase from release to release: a version that does not increase
+is invisible to installed copies. After fetching the public tags,
+`scripts/next-version.sh` prints the next one.
 
-`CFBundleVersion` must strictly increase from release to release. A version that
-does not increase is invisible to installed copies.
+Releases through `v1.5.0` used semantic versions. They keep their numbers and do
+not take part in the daily sequence.
 
 ## Scripts
 
@@ -26,14 +30,15 @@ especially on the first build.
 scripts/release-checks.sh            # the whole mandatory gate
 scripts/build-release-artifacts.sh   # dmg, appcast.xml, checksums, notes
 scripts/verify-release-artifacts.sh  # verify what was built
+scripts/next-version.sh              # the next calendar version
 ```
 
 `scripts/release-checks.sh` builds, runs the test suite, compares the bundled
-system prompt with its fixture, checks that both version fields agree and that
-`CHANGELOG.md` has a section for the canonical version, scans the worktree for
-key and token patterns, packages the application, smoke-tests the bundle
-including the single-instance guard, and finally builds and verifies the
-release artifacts.
+system prompt with its fixture, checks that both version fields hold the same
+calendar version and that `CHANGELOG.md` has a section for it dated the same day,
+scans the worktree for key and token patterns, packages the application,
+smoke-tests the bundle including the single-instance guard, and finally builds
+and verifies the release artifacts.
 
 Regression tests for the release guards run without building the application,
 accessing the Keychain or publishing anything:
@@ -54,11 +59,11 @@ Two things routinely surprise a first run:
 ## Cutting a version
 
 1. Record the changes in the `Unreleased` section of `CHANGELOG.md`.
-2. Agree on the version according to SemVer.
+2. Fetch the public tags and take the version from `scripts/next-version.sh`.
 3. Set it in both `Info.plist` fields.
 4. Move `Unreleased` into a dated section for that version.
 5. Run `scripts/release-checks.sh`.
-6. Create a draft release tagged `v<canonical version>` at the release commit.
+6. Create a draft release tagged `v<version>` at the release commit.
    Attach `Rusifikator-<version>.dmg`, `appcast.xml` and `SHA256SUMS`. Verify
    that all three uploads completed before publishing the draft. A failed
    upload leaves the release in draft state and the previous feed in service.
@@ -74,9 +79,8 @@ to the newest release, so a release published without it breaks updating for
 every installed copy.
 
 The repository-local `release` skill (`.claude/skills/release`, mirrored for
-Codex through `.agents/skills`) drives this whole cycle, including the version
-confirmation gate. It is private tooling and never ships inside the
-application.
+Codex through `.agents/skills`) drives this whole cycle. It is private tooling
+and never ships inside the application.
 
 ## The update signing key
 

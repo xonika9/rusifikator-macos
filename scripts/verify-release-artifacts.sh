@@ -73,4 +73,4 @@ for artifact in "${text_artifacts[@]}"; do
   fi
 done
 
-print "Release artifacts verified for $display_version ($canonical_version)"
+print "Release artifacts verified for $canonical_version"

@@ -63,4 +63,4 @@ rm -rf "$release_dir/old_updates"
 
 "$release_repo_root/scripts/verify-release-artifacts.sh"
 
-print "Release artifacts for $display_version ($canonical_version) are in $release_dir"
+print "Release artifacts for $canonical_version are in $release_dir"

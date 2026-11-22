@@ -28,8 +28,8 @@ class ReleaseScriptTests(unittest.TestCase):
         resources = self.root / "Sources/Rusifikator/Resources"
         resources.mkdir(parents=True)
         (resources / "Rusifikator-Info.plist").write_bytes(plistlib.dumps({
-            "CFBundleShortVersionString": "1.4",
-            "CFBundleVersion": "1.4.0",
+            "CFBundleShortVersionString": "26.11.22.1",
+            "CFBundleVersion": "26.11.22.1",
             "SUFeedURL": "https://example.invalid/appcast.xml",
             "SUPublicEDKey": "fixture-public-key",
         }))
@@ -52,12 +52,12 @@ class ReleaseScriptTests(unittest.TestCase):
 
     def make_artifacts(self, directory, signature="fixture-signature"):
         directory.mkdir(parents=True)
-        image = directory / "Rusifikator-1.4.0.dmg"
+        image = directory / "Rusifikator-26.11.22.1.dmg"
         image.write_text("fixture-disk-image")
         appcast = directory / "appcast.xml"
-        appcast.write_text(f'''<sparkle:version>1.4.0</sparkle:version>
-<sparkle:shortVersionString>1.4</sparkle:shortVersionString>
-<enclosure url="https://github.com/xonika9/rusifikator-macos/releases/download/v1.4.0/Rusifikator-1.4.0.dmg" sparkle:edSignature="{signature}" />
+        appcast.write_text(f'''<sparkle:version>26.11.22.1</sparkle:version>
+<sparkle:shortVersionString>26.11.22.1</sparkle:shortVersionString>
+<enclosure url="https://github.com/xonika9/rusifikator-macos/releases/download/v26.11.22.1/Rusifikator-26.11.22.1.dmg" sparkle:edSignature="{signature}" />
 ''')
         (directory / "SHA256SUMS").write_text("".join(
             hashlib.sha256(path.read_bytes()).hexdigest() + "  " + path.name + "\n"
@@ -66,7 +66,7 @@ class ReleaseScriptTests(unittest.TestCase):
 
     def test_secret_scan_reports_files_without_disclosing_matching_text(self):
         subprocess.run(["git", "init", "-q", str(self.root)], check=True)
-        (self.root / "CHANGELOG.md").write_text("## 1.4.0 — 2026-10-19\n")
+        (self.root / "CHANGELOG.md").write_text("## 26.11.22.1 — 2026-11-22\n")
         candidate = self.root / "candidate.txt"
         candidate.write_text("")
         subprocess.run(["git", "add", "candidate.txt"], cwd=self.root, check=True)
@@ -102,6 +102,69 @@ class ReleaseScriptTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("exit 2", result.stderr)
         self.assertNotIn("untrusted scanner diagnostic", result.stdout + result.stderr)
+
+    def check_version(self, short, canonical, heading):
+        info = self.root / "Sources/Rusifikator/Resources/Rusifikator-Info.plist"
+        values = plistlib.loads(info.read_bytes())
+        values.update(CFBundleShortVersionString=short, CFBundleVersion=canonical)
+        info.write_bytes(plistlib.dumps(values))
+        (self.root / "CHANGELOG.md").write_text(heading + "\n")
+        return self.run_release_checks()
+
+    def run_release_checks(self):
+        subprocess.run(["git", "init", "-q", str(self.root)], check=True)
+        fake_bin = self.root / "bin"
+        fake_bin.mkdir(exist_ok=True)
+        self.write_executable(fake_bin / "swift", "#!/bin/sh\nexit 0\n")
+        for name in (
+            "test-system-prompt.sh", "package-app.sh", "smoke-test-app.sh",
+            "build-release-artifacts.sh",
+        ):
+            self.write_executable(self.scripts / name, "#!/bin/sh\nexit 0\n")
+        return self.run_script("release-checks.sh", env=dict(
+            os.environ, PATH=str(fake_bin) + os.pathsep + os.environ["PATH"]))
+
+    def test_calendar_version_is_accepted_only_when_fields_and_changelog_agree(self):
+        for version, date in (("26.11.22.1", "2026-11-22"), ("27.1.5.12", "2027-01-05")):
+            with self.subTest(version=version):
+                result = self.check_version(version, version, f"## {version} — {date}")
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for short, canonical, date, message in (
+            ("1.6", "1.6.0", "2026-11-22", "YY.M.D.N"),
+            ("26.01.5.1", "26.01.5.1", "2026-01-05", "YY.M.D.N"),
+            ("26.11.22.0", "26.11.22.0", "2026-11-22", "YY.M.D.N"),
+            ("26.2.30.1", "26.2.30.1", "2026-02-30", "valid date"),
+            ("26.11.22", "26.11.22.1", "2026-11-22", "disagree"),
+            ("26.11.22.1", "26.11.22.1", "2026-11-21", "CHANGELOG.md"),
+        ):
+            with self.subTest(short=short, canonical=canonical, date=date):
+                result = self.check_version(short, canonical, f"## {canonical} — {date}")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(message, result.stderr)
+
+    def test_next_version_continues_todays_sequence(self):
+        shutil.copy2(REPOSITORY / "scripts/next-version.sh", self.scripts)
+        git = ["git", "-C", str(self.root), "-c", "user.name=t", "-c", "user.email=t@example.invalid"]
+        subprocess.run(["git", "init", "-q", str(self.root)], check=True)
+        subprocess.run(git + ["commit", "-q", "--allow-empty", "-m", "t"], check=True)
+        fake_bin = self.root / "bin"
+        fake_bin.mkdir()
+        # Report the zone's date only when the script asks for Moscow's.
+        self.write_executable(
+            fake_bin / "date", '#!/bin/sh\n[ "$TZ" = Europe/Moscow ] && echo 26.11.2\n')
+        env = dict(os.environ, PATH=str(fake_bin) + os.pathsep + os.environ["PATH"])
+
+        def next_version():
+            result = self.run_script("next-version.sh", env=env)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return result.stdout.strip()
+
+        for tag in ("v1.5.0", "v26.11.1.4", "v26.11.22.7"):
+            subprocess.run(git + ["tag", tag], check=True)
+        self.assertEqual(next_version(), "26.11.2.1")
+        for tag in ("v26.11.2.9", "v26.11.2.10"):
+            subprocess.run(git + ["tag", tag], check=True)
+        self.assertEqual(next_version(), "26.11.2.11")
 
     def test_missing_signature_tool_blocks_verification(self):
         artifacts = self.root / "dist/release"

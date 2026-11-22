@@ -7,7 +7,7 @@ scripts/release-checks.sh
 git diff --check
 ```
 
-`scripts/release-checks.sh` is the whole mandatory gate. It builds, runs the test suite, compares the bundled system prompt with its fixture, verifies that the displayed and canonical versions agree and that `CHANGELOG.md` has a released section for the canonical version, scans the worktree for key and token patterns, packages the application, smoke-tests the packaged bundle including the single-instance guard, and finally builds and verifies the release artifacts.
+`scripts/release-checks.sh` is the whole mandatory gate. It builds, runs the test suite, compares the bundled system prompt with its fixture, verifies that both version fields hold the same calendar version and that `CHANGELOG.md` has a section for it dated the same day, scans the worktree for key and token patterns, packages the application, smoke-tests the packaged bundle including the single-instance guard, and finally builds and verifies the release artifacts.
 
 The gate builds and checks local artifacts; it never publishes or uploads them. SwiftPM may need the network to fetch dependencies and binary artifacts, especially on the first build. Installing missing scanner dependencies may also require the network.
 
@@ -17,7 +17,7 @@ Building the update metadata reads the private EdDSA key from the Keychain, and 
 
 The smoke test launches the packaged application and starts a second copy. It fails when a second instance stays alive, which is what protects the guarantee that only one menu bar icon can exist.
 
-Artifact verification fails when the update feed is not HTTPS, when `appcast.xml` does not describe the canonical version, when the download address does not match the release tag, when the EdDSA signature is missing or does not match the disk image, when `sign_update` is unavailable, or when the checksums disagree.
+Artifact verification fails when the update feed is not HTTPS, when `appcast.xml` does not describe the released version, when the download address does not match the release tag, when the EdDSA signature is missing or does not match the disk image, when `sign_update` is unavailable, or when the checksums disagree.
 
 By default, `scripts/verify-release-artifacts.sh` checks local `dist/release`, including the release notes. For publication verification, download the published disk image, `appcast.xml` and `SHA256SUMS` into a separate temporary directory, then run `scripts/verify-release-artifacts.sh <download-directory>`. This mode checks that three-file attachment set; it does not require a separate release-notes file. It never substitutes the local build for downloaded files.
 
